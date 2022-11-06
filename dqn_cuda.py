@@ -13,7 +13,7 @@ from collections import deque
 import torchvision as tv
 import torch.nn.functional as F
 import sys
-env = gym.make("ALE/Pong-v5")
+env = gym.make("PongNoFrameskip-v4")
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #Hyperparameters
 episodes = 200000
@@ -23,11 +23,11 @@ tot_rewards = []
 tot_loss = []
 decay_val = 0.0001
 mem_size = 20000
-batch_size = 32
+batch_size = 128
 gamma = 0.99
 update_target = 200
 max_steps = 200
-PATH = "./saved_models/pong"
+PATH = "./saved_models/pong_batch_size_352"
 
 class NeuralNetwork(nn.Module):
     def __init__(self, state_size, action_size):

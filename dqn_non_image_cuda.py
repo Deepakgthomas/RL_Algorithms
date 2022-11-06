@@ -119,8 +119,10 @@ else:
             # state= state.reshape(1, 3, 210, 160)
             steps += 1
             frame_index += 1
-        tot_rewards.append(eps_rew)
-        tot_loss.append(eps_loss)
+
+        #todo Why is this over here? I have commented it out
+        # tot_rewards.append(eps_rew)
+        # tot_loss.append(eps_loss)
 
         if(i%10)==0:
             np.savetxt("tot_rewards.csv", np.array(tot_rewards), delimiter=' ', fmt='%s')
