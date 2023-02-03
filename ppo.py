@@ -90,18 +90,15 @@ for i in range(episodes):
     state_batch = torch.Tensor([s for (s,a,r, ns) in transitions]).to(device)
     action_batch = torch.Tensor([a for (s,a,r, ns) in transitions]).to(device)
     next_state_batch = torch.Tensor([ns for (s,a,r, ns) in transitions]).to(device)
-    # print("state_batch = ", state_batch.shape)
 
     pred_batch = actor(state_batch)
     prob_batch = pred_batch.gather(dim=1, index=action_batch.long().view(-1, 1)).squeeze()
-    values = critic(state_batch).squeeze()
-    # value_next = critic(torch.from_numpy(next_state_batch).to(device))
+    values = critic(state_batch)
+
 
     advantage = nrml_disc_rewards-values
-
-
     critic_loss = advantage.pow(2).mean()
-    actor_loss = -(torch.sum(torch.log(prob_batch)*advantage.detach()))
+    actor_loss = -(torch.sum(torch.log(prob_batch)*nrml_disc_rewards))
 
 
     policy_opt.zero_grad()
