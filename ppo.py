@@ -1,5 +1,6 @@
 #Modified this code - https://github.com/DeepReinforcementLearning/DeepReinforcementLearningInAction/blob/master/Chapter%204/Ch4_book.ipynb
 #Also, modified this code - https://github.com/higgsfield/RL-Adventure-2/blob/master/1.actor-critic.ipynb
+# Also, modified this code - https://github.com/ericyangyu/PPO-for-Beginners/blob/9abd435771aa84764d8d0d1f737fa39118b74019/ppo.py#L151
 import numpy as np
 import gym
 import torch
@@ -12,8 +13,8 @@ episodes = 10000
 
 def discount_rewards(reward, gamma = 0.99):
     return torch.pow(gamma, torch.arange(len(reward)))*reward
-def normalize_rewards(disc_reward):
-    return disc_reward/(disc_reward.max())
+# def normalize_rewards(disc_reward):
+#     return disc_reward/(disc_reward.max())
 
 class Actor(nn.Module):
     def __init__(self, state_size, action_size):
@@ -54,6 +55,31 @@ class Critic(nn.Module):
         return x
 
 
+def rollout():
+    batch_obs = []
+    batch_act = []
+    batch_log_probs = []
+    batch_rews = []
+    batch_rtgs = []
+    batch_lens = []
+    ep_rews = []
+    obs = env.reset()
+    while True:
+        batch_obs.append(obs)
+        act_probs = torch.distributions.Categorical(actor(obs))
+        action = act_probs.sample()
+        next_state, reward, done, info = env.step(action)
+        ep_rews.append(reward)
+        batch_act.append(action)
+        batch_log_probs.append(act_probs.log_prob(action))
+        if done:
+            break
+    batch_rews.append(ep_rews)
+    for i in batch_rews:
+        disc_reward = discount_rewards(i)
+        batch_rtgs.append(disc_reward)
+
+    return batch_obs, batch_rews, batch_act, batch_log_probs, batch_rtgs
 
 actor = Actor(env.observation_space.shape[0], env.action_space.n).to(device)
 critic = Critic(env.observation_space.shape[0], env.action_space.n).to(device)
@@ -62,61 +88,35 @@ value_opt = torch.optim.Adam(params = critic.parameters(), lr = learning_rate)
 
 score = []
 for i in range(episodes):
-    print("i = ", i)
-    state = env.reset()
-    done = False
-    transitions = []
+    batch_obs, batch_rews, batch_act, batch_log_probs, batch_rtgs = rollout()
+    value = critic(batch_obs)
+    # Why are we detaching value
+    A_k = batch_rtgs - value.detach()
 
-    tot_rewards = 0
-    while not done:
+    for _ in range(10):
+        value = critic(batch_obs)
+        act_probs = torch.distributions.Categorical(actor(batch_obs))
 
-        value = critic(torch.from_numpy(state).to(device))
-        policy = actor(torch.from_numpy(state).to(device))
-        action = np.random.choice(np.array([0, 1]), p=policy.cpu().data.numpy())
-        next_state, reward, done, info = env.step(action)
-        tot_rewards += 1
-        transitions.append((state, action, tot_rewards, next_state))
-        state = next_state
-
-
-
-    if i%50==0:
-        print("i = ", i, ",reward = ", tot_rewards)
-    score.append(tot_rewards)
-    reward_batch = torch.Tensor([r for (s,a,r, ns) in transitions]).flip(dims = (0,))
-
-    disc_rewards = discount_rewards(reward_batch)
-    nrml_disc_rewards = normalize_rewards(disc_rewards).to(device)
-    state_batch = torch.Tensor([s for (s,a,r, ns) in transitions]).to(device)
-    action_batch = torch.Tensor([a for (s,a,r, ns) in transitions]).to(device)
-    next_state_batch = torch.Tensor([ns for (s,a,r, ns) in transitions]).to(device)
-
-    pred_batch = actor(state_batch)
-    prob_batch = pred_batch.gather(dim=1, index=action_batch.long().view(-1, 1)).squeeze()
-    values = critic(state_batch)
+        #todo - Just copied this code. Not sure what's going on over here -
+        dist = MultivariateNormal(mean, self.cov_mat)
+        log_probs = dist.log_prob(batch_acts)
+        ratios = torch.exp(log_probs -batch_log_probs)
+        surr1 = ratios*A_k
+        surr2 = torch.clamp(ratios, 1 - clip, 1 + clip)*A_k
+        
 
 
-    advantage = nrml_disc_rewards-values
-    critic_loss = advantage.pow(2).mean()
-    actor_loss = -(torch.sum(torch.log(prob_batch)*nrml_disc_rewards))
+        pass
 
 
-    policy_opt.zero_grad()
-    actor_loss.backward()
-    policy_opt.step()
 
-    value_opt.zero_grad()
-    critic_loss.backward()
-    value_opt.step()
 
-    if i%50==0:
-        plt.scatter(np.arange(len(score)), score)
-        plt.show(block=False)
-        plt.pause(3)
-        plt.close()
 
-plt.scatter(np.arange(len(score)), score)
-plt.show()
+
+
+
+
+
 
 
 
