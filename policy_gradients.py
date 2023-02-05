@@ -9,6 +9,7 @@ env = gym.make('CartPole-v0')
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 learning_rate = 0.0001
 episodes = 10000
+gamma = 0.99
 
 def discount_rewards(reward, gamma = 0.99):
     return torch.pow(gamma, torch.arange(len(reward)))*reward
@@ -45,23 +46,29 @@ for i in range(episodes):
     transitions = []
 
     tot_rewards = 0
+    iter = 0
+
     while not done:
 
         act_proba = model(torch.from_numpy(state).to(device))
         action = np.random.choice(np.array([0,1]), p = act_proba.cpu().data.numpy())
         next_state, reward, done, info = env.step(action)
-        tot_rewards += 1
+
+        tot_rewards += np.power(gamma, iter) * reward
         transitions.append((state, action, tot_rewards))
         state = next_state
+        iter += 1
 
 
     if i%50==0:
-        print("i = ", i, ",reward = ", tot_rewards)
-    score.append(tot_rewards)
+        print("i = ", i, ",steps = ", iter)
+    score.append(iter)
     reward_batch = torch.Tensor([r for (s,a,r) in transitions]).flip(dims = (0,))
+    # print("reward_batch = ", reward_batch)
 
-    disc_rewards = discount_rewards(reward_batch)
-    nrml_disc_rewards = normalize_rewards(disc_rewards).to(device)
+    # disc_rewards = discount_rewards(reward_batch)
+    # print("disc_rewards = ", disc_rewards)
+    nrml_disc_rewards = normalize_rewards(reward_batch).to(device)
     state_batch = torch.Tensor([s for (s,a,r) in transitions])
     action_batch = torch.Tensor([a for (s,a,r) in transitions]).to(device)
     pred_batch = model(state_batch.to(device))
