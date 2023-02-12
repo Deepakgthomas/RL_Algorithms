@@ -2,6 +2,8 @@ import numpy as np
 import gym
 import torch
 from torch import nn
+
+
 import matplotlib.pyplot as plt
 
 if gym.__version__ < '0.26':
@@ -160,40 +162,34 @@ for i in range(episodes):
     all_A_k = (all_A_k - all_A_k.mean()) / all_A_k.std() + 1e-8
 
     # NOTE use detach if you calculated value without using no_grad
-    # todo Why are we detaching value ? detach returns same tensor but without grads ,
-    #  so when calling backward and step it won't change the critic which is used to calculate the value we are using the advantage to optimize the actor ,
-    #  not the other way around
+    # todo Why are we detaching value ? detach returns same tensor but without grads , so when calling backward and step it won't change the critic which is used to calculate the value we are using the advantage to optimize the actor , not the other way around
     # A_k = batch_rtgs - value.squeeze().detach()
-    batch_obs = all_obs
-    batch_actions = all_actions
-    batch_log_probs = all_log_probs
-    batch_rtgs = all_rtgs
-    batch_A_k = all_A_k
+    batch_size = len(all_obs) // training_iters
+    for _ in range(4):
+        indices = torch.randint(len(all_obs), size=(batch_size,))
+        batch_obs = all_obs[indices]
+        batch_actions = all_actions[indices]
+        batch_log_probs = all_log_probs[indices]
+        batch_rtgs = all_rtgs[indices]
+        batch_A_k = all_A_k[indices]
+        for _ in range(training_iters):
+            value = critic(batch_obs).squeeze()
+            act_probs = torch.distributions.Categorical(actor(batch_obs))
 
+            action = act_probs.sample()
+            log_probs = act_probs.log_prob(batch_actions).squeeze()
+            ratios = torch.exp(log_probs - batch_log_probs)
+            surr1 = ratios * batch_A_k
+            surr2 = torch.clamp(ratios, 1 - clip, 1 + clip) * batch_A_k
 
-    for _ in range(training_iters):
-        value = critic(batch_obs).squeeze()
-        act_probs = torch.distributions.Categorical(actor(batch_obs))
+            actor_loss = -torch.min(surr1, surr2).mean()
+            critic_loss = (value - batch_rtgs).pow(2).mean()
 
-        action = act_probs.sample()
-        log_probs = act_probs.log_prob(batch_actions).squeeze()
-        # print("log_probs = ", log_probs[0:10])
-        ratios = torch.exp(log_probs - batch_log_probs)
-        surr1 = ratios * batch_A_k
-        surr2 = torch.clamp(ratios, 1 - clip, 1 + clip) * batch_A_k
+            # todo No idea why we are doing retain_graph = True
+            policy_opt.zero_grad()
+            actor_loss.backward(retain_graph=True)
+            policy_opt.step()
 
-        actor_loss = -torch.min(surr1, surr2).mean()
-
-        critic_loss = (value - batch_rtgs).pow(2).mean()
-
-        # print("actor loss = ", actor_loss)
-        # print("critic_loss = ", critic_loss)
-
-        # todo No idea why we are doing retain_graph = True
-        policy_opt.zero_grad()
-        actor_loss.backward(retain_graph=True)
-        policy_opt.step()
-
-        value_opt.zero_grad()
-        critic_loss.backward(retain_graph=True)
-        value_opt.step()
+            value_opt.zero_grad()
+            critic_loss.backward(retain_graph=True)
+            value_opt.step()

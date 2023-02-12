@@ -5,6 +5,7 @@ import numpy as np
 import gym
 import torch
 from torch import nn
+torch.manual_seed(798)
 import matplotlib.pyplot as plt
 env = gym.make('Acrobot-v1')
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -111,8 +112,6 @@ for i in range(episodes):
     A_k = batch_rtgs - value.squeeze().detach()
     A_k = (A_k - A_k.mean())/A_k.std() + 1e-8
 
-
-
     for _ in range(training_iters):
         value = critic(batch_obs).squeeze()
         assert(value.ndim==1)
@@ -131,7 +130,9 @@ for i in range(episodes):
         surr2 = torch.clamp(ratios, 1 - clip, 1 + clip)*A_k
         assert (surr2.ndim == 1)
         actor_loss = -torch.min(surr1, surr2).mean()
+        print("actor_loss = ", actor_loss)
         critic_loss = (value - batch_rtgs).pow(2).mean()
+        print("critic_loss = ", critic_loss)
 
 
         #todo No idea why we are doing retain_graph = True
