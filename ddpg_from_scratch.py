@@ -155,6 +155,7 @@ for i in range(episodes):
     steps = 0
     while not done:
         print("frame_index = ", frame_index, "episode = ", i)
+        #todo This seems wrong
         action = online_policy(state.to(device)).cpu().detach().numpy()
         # action = add_exploration(action, steps+1)
         action = ou_noise.get_action(action, steps)
