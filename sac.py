@@ -15,8 +15,10 @@ import torch.optim as optim
 import sys
 value_lr = 0.001
 policy_lr = 0.001
+batch_size = 100
 episodes = 1000
 env = gym.make("Pendulum-v1")
+
 class Q_function(nn.Module):
     def __init__(self, state_size, action_size):
         super(Q_function, self).__init__()
@@ -29,7 +31,7 @@ class Q_function(nn.Module):
             nn.ReLU(),
             nn.Linear(128, 128),
             nn.ReLU(),
-            nn.Linear(128, action_size)
+            nn.Linear(128, 1)
         )
     def forward(self, x):
         x = self.linear_relu_stack(x)
@@ -49,6 +51,7 @@ class PolicyNetwork(nn.Module):
         x = F.relu(self.linear2(x))
         x = F.tanh(self.linear3(x))
         return x
+replay_buffer = deque(maxlen=10000)
 
 Q1 = Q_function(env.observation_space.shape[-1], env.action_space.n)
 # Q2 = Q_function(env.observation_space.shape[-1], env.action_space.n)
@@ -58,9 +61,33 @@ policy = PolicyNetwork(env.observation_space.shape[-1], env.action_space.n)
 value_opt = optim.Adam(Q1.parameters(), lr=value_lr)
 policy_opt = optim.Adam(policy.parameters(), lr = policy_lr)
 
+def update():
+    state, next_state, reward, done, action = zip(*random.sample(replay_buffer, batch_size))
+    state = torch.stack(list(state), dim=0).squeeze(1)
+    state= state.reshape(batch_size, 3, 210, 160)
+    next_state = torch.from_numpy(np.array(next_state)).reshape(batch_size, 3, 210, 160).type(torch.float32)
+    reward = torch.from_numpy(np.array(reward))
+    done = torch.from_numpy(np.array(done)).long()
+    new_action = policy(state).cpu().detach().numpy()
+    current_Q = Q1(state, action)
+    next_state_Q = Q1(next_state, new_action)
+    target = reward + gamma*(1-done)(next_state_Q - lr*log(new_action))
+    Q_loss = (current_Q - target)**2
+    # policy_loss = ()
+
+
+
 for i in range(episodes):
     state = torch.tensor(env.reset(), dtype=torch.float32).unsqueeze(0)
     done = False
     while not done:
         action = policy(state).cpu().detach().numpy()
+        next_state, reward, done, _ = env.step(action)
+        replay_buffer.append((state, next_state, reward, done, action))
+        if done:
+            break
+
+        state = torch.tensor(next_state, dtype=torch.float32).unsqueeze(0)
+
+
 
