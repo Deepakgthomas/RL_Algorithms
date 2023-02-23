@@ -47,10 +47,17 @@ class PolicyNetwork(nn.Module):
         self.linear3.bias.data.uniform_(-init_w, init_w)
 
     def forward(self, state):
-        x = F.relu(self.linear1(state))
-        x = F.relu(self.linear2(x))
-        x = F.tanh(self.linear3(x))
-        return x
+        mu = F.relu(self.linear1(state))
+        mu = F.relu(self.linear2(mu))
+        mu = F.tanh(self.linear3(mu))
+
+        sigma = F.relu(self.linear1(state))
+        sigma = F.relu(self.linear2(sigma))
+        sigma = F.tanh(self.linear3(sigma))
+        epsilon = torch.normal(0,1)
+        action = F.tanh(mu + sigma*epsilon)
+
+        return action
 replay_buffer = deque(maxlen=10000)
 
 Q1 = Q_function(env.observation_space.shape[-1], env.action_space.n)
@@ -68,12 +75,14 @@ def update():
     next_state = torch.from_numpy(np.array(next_state)).reshape(batch_size, 3, 210, 160).type(torch.float32)
     reward = torch.from_numpy(np.array(reward))
     done = torch.from_numpy(np.array(done)).long()
+    next_action = policy(next_state).cpu().detach().numpy()
     new_action = policy(state).cpu().detach().numpy()
     current_Q = Q1(state, action)
+    current_Q_new = Q1(state, new_action)
     next_state_Q = Q1(next_state, new_action)
-    target = reward + gamma*(1-done)(next_state_Q - lr*log(new_action))
+    target = reward + gamma*(1-done)(next_state_Q - lr*log(next_action))
     Q_loss = (current_Q - target)**2
-    # policy_loss = ()
+    policy_loss = (current_Q_new)
 
 
 
