@@ -16,7 +16,7 @@ import sys
 env = gym.make("CartPole-v0")
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #Hyperparameters
-episodes = 200000
+episodes = 800
 eps = 1.0
 learning_rate = 0.0001
 tot_rewards = []

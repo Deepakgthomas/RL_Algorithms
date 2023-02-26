@@ -1,3 +1,9 @@
+# Following the algorithm from here - https://spinningup.openai.com/en/latest/algorithms/sac.html
+#This is supposed to be a bare bones implementation. So it doesn't have -
+
+#1. Target Networks
+#2. Clipped Q Networks
+#3. Multiple Q Networks
 # Here we import all libraries
 import numpy as np
 import gym
@@ -18,18 +24,23 @@ value_lr = 0.001
 policy_lr = 0.001
 batch_size = 100
 episodes = 1000
-ent_coeff = 0.001 #todo What's the value for this?
+ent_coeff = 0.2 #taken from cleanrl
 gamma = 0.99
 Q_learning_rate = 0.001
+replay_buffer = deque(maxlen=10000000)
+tot_rewards = []
 
-env = gym.make("MountainCarContinuous-v0")
+
+env = gym.make("Pendulum-v1")
+# print("env.observation_space.shape = ", env.observation_space.shape[0])
+# print("env = ", env.action_space.shape[0])
 class Q_function(nn.Module):
     def __init__(self, state_size, action_size):
         super(Q_function, self).__init__()
         self.state_size = state_size
         self.action_size = action_size
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(state_size, 300),
+            nn.Linear(state_size+action_size, 300),
             nn.ReLU(),
             nn.Linear(300, 128),
             nn.ReLU(),
@@ -37,7 +48,8 @@ class Q_function(nn.Module):
             nn.ReLU(),
             nn.Linear(128, 1)
         )
-    def forward(self, x):
+    def forward(self, state, action):
+        x = torch.cat((state, action),1)
         x = self.linear_relu_stack(x)
         return x
 
@@ -57,9 +69,10 @@ class PolicyNetwork(nn.Module):
 
         sigma = F.relu(self.linear1(state))
         sigma = F.relu(self.linear2(sigma))
-        sigma = F.tanh(self.linear3(sigma))
-
-        dist = Normal(mu, sigma)
+        sigma = F.relu(self.linear3(sigma))
+        # print("mu = ", mu)
+        # print("sigma = ", sigma)
+        dist = Normal(mu, torch.clamp(sigma, min=0.00001))
         if not deterministic:
             action = dist.rsample()
         else:
@@ -78,52 +91,78 @@ class PolicyNetwork(nn.Module):
 
 
         return action, log_pi
-replay_buffer = deque(maxlen=10000)
 
-Q1 = Q_function(env.observation_space.shape[-1], env.action_space.n)
+Q1 = Q_function(env.observation_space.shape[-1], 1)
 
 # Q2 = Q_function(env.observation_space.shape[-1], env.action_space.n)
 
-policy = PolicyNetwork(env.observation_space.shape[-1], env.action_space.n)
+policy = PolicyNetwork(env.observation_space.shape[0], env.action_space.shape[0])
 Q1_opt = torch.optim.Adam(params = Q1.parameters(), lr = Q_learning_rate)
 policy_opt = torch.optim.Adam(params = policy.parameters(), lr = policy_lr)
 
 
 def update():
-    state, next_state, reward, done, action = zip(*random.sample(replay_buffer, batch_size))
-    state = torch.stack(list(state), dim=0).squeeze(1)
-    state= state.reshape(batch_size, 3, 210, 160)
-    next_state = torch.from_numpy(np.array(next_state)).reshape(batch_size, 3, 210, 160).type(torch.float32)
-    reward = torch.from_numpy(np.array(reward))
-    done = torch.from_numpy(np.array(done)).long()
-    curr_policy_next_action = policy(next_state)[0].cpu().detach().numpy()
-    curr_policy_action = policy(state)[0].cpu().detach().numpy()
-    current_Q = Q1(state, action)
-    current_Q_new = Q1(state, curr_policy_action)
-    next_state_Q = Q1(next_state, curr_policy_next_action)
-    target = reward + gamma*(1-done)(next_state_Q - ent_coeff*policy(next_state)[1])
-    Q_loss = ((current_Q - target)**2).mean()
-    Q1_opt.zero_grad()
-    Q_loss.backward()
-    Q1_opt.step()
+    with torch.no_grad():
+        state, next_state, reward, done, action = zip(*random.sample(replay_buffer, batch_size))
+        state = torch.stack(list(state), dim=0).squeeze(1).reshape(batch_size, -1)
+        next_state = torch.from_numpy(np.array(next_state)).reshape(batch_size, -1).type(torch.float32)
+        reward = torch.from_numpy(np.array(reward))
+        action = torch.from_numpy(np.array(action)).reshape(-1, 1)
+        done = torch.from_numpy(np.array(done)).long()
 
-    policy_loss = (current_Q_new-ent_coeff*torch.log(policy(next_state)[1])).mean()
+    # a'^{~}
+    curr_policy_next_action = policy(next_state)[0]
+    # a^{~}
+    curr_policy_action = policy(state)[0]
+    # Q(s,a)
+    current_Q = Q1(state, action).squeeze()
+    # Q(s, a^{~})
+    current_Q_new = Q1(state, curr_policy_action).squeeze()
+    # Q(s, a'^{~})
+    next_state_Q = Q1(next_state, curr_policy_next_action).squeeze()
+    # y(r, s', d)
+    target = reward + gamma*(1-done)*(next_state_Q - ent_coeff*policy(next_state)[1])
+
+    # Q_loss = ((current_Q - target)**2).mean()
+    # Q1_opt.zero_grad()
+    # Q_loss.backward()
+    # Q1_opt.step()
+    # policy_loss = (current_Q_new-ent_coeff*torch.log(policy(next_state)[1])).mean()
+    # policy_opt.zero_grad()
+    # policy_loss.backward()
+    # policy_opt.step()
+
+
+
+    # Simulataenously summing both Q and policy loss. Otherwise, I was getting an error
+    total_loss = ((current_Q - target)**2).mean() + (current_Q_new-ent_coeff*torch.log(policy(state)[1])).mean()
+    Q1_opt.zero_grad()
     policy_opt.zero_grad()
-    policy_loss.backward()
+    total_loss.backward()
+    Q1_opt.step()
     policy_opt.step()
 
 
 for i in range(episodes):
+    print("i = ", i)
     state = torch.tensor(env.reset(), dtype=torch.float32).unsqueeze(0)
+    eps_rew = 0
     done = False
     while not done:
-        action = policy(state).cpu().detach().numpy()
-        next_state, reward, done, _ = env.step(action)
-        replay_buffer.append((state, next_state, reward, done, action))
-        if done:
-            break
 
-        state = torch.tensor(next_state, dtype=torch.float32).unsqueeze(0)
+        action = policy(state)[0].detach().numpy()
+        next_state, reward, done, _ = env.step(action)
+        print("reward = ", reward)
+        replay_buffer.append((state, next_state, reward, done, action))
+        eps_rew += reward
+        if done:
+            tot_rewards.append(eps_rew)
+            break
+        if len(replay_buffer)>batch_size:
+            update()
+        state = torch.tensor(next_state, dtype=torch.float32).T
+    print("Episode reward = ", eps_rew)
+    tot_rewards.append(eps_rew)
 
 
 

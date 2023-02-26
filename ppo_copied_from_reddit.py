@@ -4,15 +4,17 @@ import gym
 
 
 import torch
+import random
 from torch import nn
-
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
 
 import matplotlib.pyplot as plt
 
-if gym.__version__ < '0.26':
-    env = gym.make('Acrobot-v1', new_step_api=True)
-else:
-    env = gym.make('Acrobot-v1')
+env = gym.make('CartPole-v1')
+env.seed(0)
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 learning_rate = 2.5e-4
 episodes = 10000
@@ -21,7 +23,7 @@ gamma = 0.99
 clip = 0.2
 
 # No idea whether these hyperparameters are good
-ppo_batch = 30
+ppo_batch = 5
 training_iters = 4
 
 # dim_action = env.action_space.shape[0]
@@ -69,55 +71,121 @@ class Critic(nn.Module):
         return x
 
 
+# def rollout():
+#     transitions = []
+#     rtgs_list = []
+#     for i in range(5):  # 100 episodes should be good?
+#         # obs = torch.tensor(env.reset(), dtype=torch.float32).unsqueeze(0)
+#         obs = env.reset()
+#         if isinstance(obs, tuple):
+#             obs = obs[0]
+#         tot_rewards = 0
+#
+#         #### SERIOUSLY why are we emptying the data it should be initialised before the for loop?
+#         # transitions = []
+#         iter = 0
+#         done = False
+#         trunc = False
+#         rewards = []
+#         with torch.no_grad():
+#             while not done and not trunc:
+#                 # obs_tensor uses obs instead of next_state
+#                 obs_tensor = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+#                 act_probs = torch.distributions.Categorical(actor(obs_tensor))
+#                 # act_probs = torch.distributions.Categorical(actor(obs.to(device)))
+#                 action = act_probs.sample()
+#
+#                 ## action in device , use it to calculate log_prob before moving it to cpu
+#                 log_prob = act_probs.log_prob(action)
+#                 log_prob = log_prob.cpu().numpy()
+#                 # no need to detach now
+#                 # action = action.cpu().detach().numpy()
+#                 # action = action.cpu().numpy()
+#                 action = action.cpu().numpy()[0]  # take first action from a list that contains only 1 action :S
+#                 # next_state, reward, done, info = env.step(action)
+#                 next_state, reward, done, trunc, info = env.step(action)
+#                 # action = torch.tensor(action, dtype=torch.float32).to(device)
+#
+#                 ##### CRITICAL
+#                 # rewards to go needs future rewards ,not past rewards
+#                 # tot_rewards += np.power(gamma, iter) * reward
+#                 tot_rewards += reward
+#                 iter += 1
+#
+#                 # we do not need the total_reward
+#                 # transitions.append((obs, action, log_prob, tot_rewards))
+#                 rewards.append(reward)
+#                 # add the reward instead to calculate rtgs
+#                 transitions.append((obs, action, log_prob))
+#                 # added this to let our next_State be our state
+#                 obs = next_state
+#
+#         reversed_rtgs = []
+#         reverse_rtg = 0
+#         for r in reversed(rewards):
+#             reverse_rtg = reverse_rtg * gamma + r
+#             reversed_rtgs.append(reverse_rtg)
+#
+#         for rtg in reversed(reversed_rtgs):
+#             rtgs_list.append(rtg)
+#         print("Episode Reward = ", tot_rewards)
+#
+#     # d = zip(transitions)
+#     obs_ar, act_ar, log_probs_ar = list(zip(*transitions))
+#     rtgs_array = np.array(rtgs_list)
+#
+#     # batch_obs = torch.Tensor([s.numpy() for (s, a, a_p, r) in transitions]).to(device)
+#     # # print("batch_obs shape = ", np.array(batch_obs).shape)
+#     # batch_act = torch.Tensor([a for (s, a, a_p, r) in transitions]).to(device)
+#     # batch_log_probs = torch.Tensor([a_p for (s, a, a_p, r) in transitions]).to(device)
+#     # # batch_rtgs = torch.Tensor([r for (s, a, a_p, r) in transitions]).flip(dims = (0,)).to(device)
+#
+#     batch_obs = torch.tensor(obs_ar, dtype=torch.float32, device=device)
+#     batch_act = torch.tensor(act_ar, dtype=torch.int32, device=device).squeeze()
+#     batch_log_probs = torch.tensor(log_probs_ar, dtype=torch.float32, device=device).squeeze()
+#     batch_rtgs = torch.tensor(rtgs_array, dtype=torch.float32, device=device).squeeze()
+#     return batch_obs, batch_act, batch_log_probs, batch_rtgs
+
+
 def rollout():
     transitions = []
+    disc_reward_list = []
     rtgs_list = []
-    for i in range(5):  # 100 episodes should be good?
-        print("Rollout process, i = ", i)
-        # obs = torch.tensor(env.reset(), dtype=torch.float32).unsqueeze(0)
+    for i in range(ppo_batch):
         obs = env.reset()
-        if isinstance(obs, tuple):
-            obs = obs[0]
+        # obs = torch.tensor(env.reset(), dtype=torch.float32).unsqueeze(0)
         tot_rewards = 0
-
-        #### SERIOUSLY why are we emptying the data it should be initialised before the for loop?
-        # transitions = []
-        iter = 0
         done = False
-        trunc = False
+        iter = 0
+
+
         rewards = []
-        with torch.no_grad():
-            while not done and not trunc:
-                # obs_tensor uses obs instead of next_state
-                obs_tensor = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-                act_probs = torch.distributions.Categorical(actor(obs_tensor))
-                # act_probs = torch.distributions.Categorical(actor(obs.to(device)))
-                action = act_probs.sample()
 
-                ## action in device , use it to calculate log_prob before moving it to cpu
-                log_prob = act_probs.log_prob(action)
-                log_prob = log_prob.cpu().numpy()
-                # no need to detach now
-                # action = action.cpu().detach().numpy()
-                # action = action.cpu().numpy()
-                action = action.cpu().numpy()[0]  # take first action from a list that contains only 1 action :S
-                # next_state, reward, done, info = env.step(action)
-                next_state, reward, done, trunc, info = env.step(action)
-                # action = torch.tensor(action, dtype=torch.float32).to(device)
+        while not done:
+            obs = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+            act_probs = torch.distributions.Categorical(actor(obs.to(device)))
+            action = act_probs.sample().squeeze()
+            log_prob = act_probs.log_prob(action)
+            log_prob = torch.tensor(log_prob, dtype=torch.float32, device=device)
+            action = action.cpu().detach().numpy()
 
-                ##### CRITICAL
-                # rewards to go needs future rewards ,not past rewards
-                # tot_rewards += np.power(gamma, iter) * reward
-                tot_rewards += reward
-                iter += 1
+            next_state, reward, done, info = env.step(action)
+            action = torch.tensor(action, dtype=torch.float32).to(device)
+            rewards.append(reward)
+            tot_rewards += reward
+            iter += 1
+            transitions.append((obs.cpu().detach().numpy(), action.cpu().detach().numpy(), log_prob.cpu().detach().numpy()))
+            obs = next_state
+        print("tot_rewards = ", tot_rewards)
+        # eps_rew = 0
+        # eps_rew_list = []
+        # for reward in reversed(rewards):
+        #     eps_rew = eps_rew*gamma + reward
+        #     eps_rew_list.append(eps_rew)
+        #
+        # for rtgs in reversed(eps_rew_list):
+        #     disc_reward_list.append(rtgs)
 
-                # we do not need the total_reward
-                # transitions.append((obs, action, log_prob, tot_rewards))
-                rewards.append(reward)
-                # add the reward instead to calculate rtgs
-                transitions.append((obs, action, log_prob))
-                # added this to let our next_State be our state
-                obs = next_state
 
         reversed_rtgs = []
         reverse_rtg = 0
@@ -128,31 +196,28 @@ def rollout():
         for rtg in reversed(reversed_rtgs):
             rtgs_list.append(rtg)
         print("Episode Reward = ", tot_rewards)
+    batch_obs, batch_act, batch_log_probs = list(zip(*transitions))
+    batch_obs = torch.tensor(np.array(batch_obs).reshape(-1,4), dtype=torch.float32, device=device)
+    batch_act = torch.tensor(np.array(batch_act), dtype=torch.float32, device=device)
+    print("batch_act = ", batch_act)
+    batch_log_probs = torch.tensor(np.array(batch_log_probs).reshape(-1), dtype=torch.float32, device=device)
 
-    # d = zip(transitions)
-    obs_ar, act_ar, log_probs_ar = list(zip(*transitions))
-    rtgs_array = np.array(rtgs_list)
+    # batch_obs = torch.Tensor([s for (s, a, a_p) in transitions]).to(device)
+    # batch_act = torch.Tensor([a for (s, a, a_p) in transitions]).to(device)
+    # batch_log_probs = torch.Tensor([a_p for (s, a, a_p) in transitions]).to(device)
+    batch_rtgs = torch.Tensor(rtgs_list).to(device)
 
-    # batch_obs = torch.Tensor([s.numpy() for (s, a, a_p, r) in transitions]).to(device)
-    # # print("batch_obs shape = ", np.array(batch_obs).shape)
-    # batch_act = torch.Tensor([a for (s, a, a_p, r) in transitions]).to(device)
-    # batch_log_probs = torch.Tensor([a_p for (s, a, a_p, r) in transitions]).to(device)
-    # # batch_rtgs = torch.Tensor([r for (s, a, a_p, r) in transitions]).flip(dims = (0,)).to(device)
-
-    batch_obs = torch.tensor(obs_ar, dtype=torch.float32, device=device)
-    batch_act = torch.tensor(act_ar, dtype=torch.int32, device=device).squeeze()
-    batch_log_probs = torch.tensor(log_probs_ar, dtype=torch.float32, device=device).squeeze()
-    batch_rtgs = torch.tensor(rtgs_array, dtype=torch.float32, device=device).squeeze()
     return batch_obs, batch_act, batch_log_probs, batch_rtgs
 
 
-actor = Actor(env.observation_space.shape[0], dim_action).to(device)
+actor = Actor(env.observation_space.shape[0], env.action_space.n).to(device)
 critic = Critic(env.observation_space.shape[0], dim_action).to(device)
 policy_opt = torch.optim.Adam(params=actor.parameters(), lr=learning_rate)
 value_opt = torch.optim.Adam(params=critic.parameters(), lr=learning_rate)
 
 score = []
 for i in range(episodes):
+    print("i = ", i)
     all_obs, all_actions, all_log_probs, all_rtgs = rollout()
     # if we do not need grad , then torch.no_grad is faster and use less memory "don't quote me on that lol"
     with torch.no_grad():
@@ -196,3 +261,24 @@ for i in range(episodes):
             value_opt.zero_grad()
             critic_loss.backward(retain_graph=True)
             value_opt.step()
+    # for _ in range(training_iters):
+    #     value = critic(all_obs).squeeze()
+    #     act_probs = torch.distributions.Categorical(actor(all_obs))
+    #
+    #     action = act_probs.sample()
+    #     log_probs = act_probs.log_prob(all_actions).squeeze()
+    #     ratios = torch.exp(log_probs - all_log_probs)
+    #     surr1 = ratios * all_A_k
+    #     surr2 = torch.clamp(ratios, 1 - clip, 1 + clip) * all_A_k
+    #
+    #     actor_loss = -torch.min(surr1, surr2).mean()
+    #     critic_loss = (value - all_rtgs).pow(2).mean()
+    #
+    #     # todo No idea why we are doing retain_graph = True
+    #     policy_opt.zero_grad()
+    #     actor_loss.backward(retain_graph=True)
+    #     policy_opt.step()
+    #
+    #     value_opt.zero_grad()
+    #     critic_loss.backward(retain_graph=True)
+    #     value_opt.step()
