@@ -30,11 +30,11 @@ value_lr = 2.5e-4
 policy_lr = 2.5e-4
 batch_size = 500
 episodes = 1000
-ent_coeff = 0.1 #taken from cleanrl
+ent_coeff = 0.5 #taken from cleanrl
 gamma = 0.99
 Q_learning_rate = 2.5e-4
 replay_buffer = deque(maxlen=10000000)
-mem_size = 5000
+mem_size = 8000
 tot_rewards = []
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -64,7 +64,8 @@ class Q_function(nn.Module):
         x = self.linear_relu_stack(x)
         x = self.last_linear(x)
         return x
-
+LOG_STD_MAX = 2
+LOG_STD_MIN = -5
 class PolicyNetwork(nn.Module):
     def __init__(self, dim_state, dim_action, act_limit, init_w=3e-3):
         super(PolicyNetwork,self).__init__()
@@ -72,39 +73,28 @@ class PolicyNetwork(nn.Module):
         self.linear2 = nn.Linear(32, 32)
         self.mean = nn.Linear(32,1)
         self.std = nn.Linear(32,1)
-        self.mean.weight.data.uniform_(-init_w, init_w)
-        self.mean.bias.data.uniform_(-init_w, init_w)
-        self.std.weight.data.uniform_(-init_w, init_w)
-        self.std.bias.data.uniform_(-init_w, init_w)
-    def forward(self, state, deterministic = False):
-        x = F.relu(self.linear1(state))
+
+    def forward(self, x):
+        x = F.relu(self.linear1(x))
         x = F.relu(self.linear2(x))
-
-        mu = self.mean(x)
-        sigma = F.tanh(self.std(x))
-
-
-
-        dist = Normal(mu, torch.clamp(sigma, min=0.00001))
-        if not deterministic:
-            action = dist.rsample()
-        else:
-            action = mu
-
-        #Copying this from here - https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/sac/core.py
-        #Need to understand it better
-        log_pi = dist.log_prob(action).sum(axis=-1)
-        log_pi -= (2*(np.log(2)-action-F.softplus(-2*action))).sum(axis=1)
-
-        #todo Confused with the location of log prob
-        #todo Not sure what act_limit does
-
-        action = F.tanh(action)
-        action = act_limit * action
+        mean = self.mean(x)
+        log_std = self.std(x)
+        log_std = torch.tanh(log_std)
+        log_std = LOG_STD_MIN + 0.5 * (LOG_STD_MAX - LOG_STD_MIN) * (log_std + 1)  # From SpinUp / Denis Yarats
 
 
+        std = log_std.exp()
+        normal = torch.distributions.Normal(mean, std)
+        x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
+        y_t = torch.tanh(x_t)
+        action = act_limit
+        log_prob = normal.log_prob(x_t)
+        # Enforcing Action Bound
+        log_prob -= torch.log(act_limit * (1 - y_t.pow(2)) + 1e-6)
+        log_prob = log_prob.sum(1, keepdim=True)
+        mean = torch.tanh(mean) * act_limit
+        return mean, log_prob
 
-        return action, log_pi
 Q1 = Q_function(env.observation_space.shape[-1], 1).to(device)
 
 # Q2 = Q_function(env.observation_space.shape[-1], env.action_space.n)

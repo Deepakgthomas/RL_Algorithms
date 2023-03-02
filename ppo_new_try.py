@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 torch.manual_seed(0)
 random.seed(0)
 np.random.seed(0)
-env = gym.make('CartPole-v1')
+env = gym.make('Acrobot-v1')
 env.seed(0)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -99,7 +99,7 @@ def rollout():
             disc_reward_list.append(rtgs)
 
     batch_obs, batch_act, batch_log_probs = list(zip(*transitions))
-    batch_obs = torch.Tensor(np.array(batch_obs)).reshape(-1,4).to(device)
+    batch_obs = torch.Tensor(np.array(batch_obs)).reshape(-1,env.observation_space.shape[0]).to(device)
     batch_act = torch.Tensor(np.array(batch_act).reshape(-1)).to(device)
     # print("batch_act = ", batch_act)
     batch_log_probs = torch.Tensor(np.array(batch_log_probs).reshape(-1)).to(device)
@@ -108,7 +108,6 @@ def rollout():
     batch_rtgs = torch.Tensor(disc_reward_list).to(device)
 
     return batch_obs, batch_act, batch_log_probs, batch_rtgs
-
 actor = Actor(env.observation_space.shape[0], env.action_space.n).to(device)
 critic = Critic(env.observation_space.shape[0], 1).to(device)
 policy_opt = torch.optim.Adam(params = actor.parameters(), lr = learning_rate)
@@ -118,7 +117,6 @@ score = []
 for i in range(episodes):
     print("i = ", i)
     batch_obs, batch_act, batch_log_probs, batch_rtgs = rollout()
-
     value = critic(batch_obs)
     # todo Why are we detaching value
     A_k = batch_rtgs - value.squeeze().detach()
