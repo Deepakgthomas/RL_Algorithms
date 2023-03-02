@@ -2,7 +2,7 @@ Here is my implementation of popular RL algorithms. I did refer many popular cod
 
 The algorithms I have implemented are  - 
 
-1. DQN
+1. [DQN](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/dqn_non_image_cuda.py)
 2. PPO
 3. DDQN
 4. PG (Work needed)
