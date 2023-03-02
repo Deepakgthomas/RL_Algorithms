@@ -1,4 +1,10 @@
-# Q_learning_cliff_walking_example
+Here is my implementation of popular RL algorithms. I did refer many popular code bases while writing my implementation.
 
-Here's a minimal Q-learning example on Sutton's cliff walking example. The environment is provided by Open-AI gym.
-![cliff_walking](https://user-images.githubusercontent.com/21986394/182038804-e8888900-9300-462a-b19c-8c025e36d977.png)
+The algorithms I have implemented are  - 
+
+1. [DQN](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/dqn_non_image_cuda.py)
+2. PPO
+3. DDQN
+4. PG (Work needed)
+5. DDPG (Work needed)
+6. SAC (Work needed)
