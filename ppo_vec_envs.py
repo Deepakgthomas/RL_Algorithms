@@ -9,6 +9,7 @@ if __name__ == '__main__':
     import random
 
     from torch import nn
+
     torch.manual_seed(798)
     import matplotlib.pyplot as plt
     torch.manual_seed(0)
