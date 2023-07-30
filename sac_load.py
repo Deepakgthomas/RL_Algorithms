@@ -22,7 +22,6 @@ import torchvision as tv
 import torch.nn.functional as F
 import torch.optim as optim
 import sys
-import os
 value_lr = 2.5e-4
 policy_lr = 2.5e-4
 batch_size = 500
@@ -33,8 +32,7 @@ Q_learning_rate = 2.5e-4
 replay_buffer = deque(maxlen=10000000)
 mem_size = 1000
 polyak = 0.995
-PATH = "/saved_models/pong_batch_size_35"
-os.makedirs(PATH, exist_ok = True)
+PATH = "./SAC_1/"
 tot_rewards = []
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -101,98 +99,15 @@ class PolicyNetwork(nn.Module):
         return action, log_prob
 
 Q1 = Q_function(env.observation_space.shape[-1], 1).to(device)
-target_Q1 = Q_function(env.observation_space.shape[-1], 1).to(device)
 Q2 = Q_function(env.observation_space.shape[-1], 1).to(device)
-target_Q2 = Q_function(env.observation_space.shape[-1], 1).to(device)
 
 policy = PolicyNetwork(env.observation_space.shape[0], 2, act_limit).to(device)
-Q1_opt = torch.optim.Adam(params = Q1.parameters(), lr = Q_learning_rate)
-policy_opt = torch.optim.Adam(params = policy.parameters(), lr = policy_lr)
+policy.load_state_dict(torch.load(PATH))
+Q1.load_state_dict(torch.load(PATH))
+Q2.load_state_dict(torch.load(PATH))
 
 
 
-for target_param, online_param in zip(target_Q1.parameters(), Q1.parameters()):
-    target_param.data.copy_(online_param)
-
-for target_param, online_param in zip(target_Q2.parameters(), Q2.parameters()):
-    target_param.data.copy_(online_param)
-def update():
-    with torch.no_grad():
-        state, next_state, reward, done, action = zip(*random.sample(replay_buffer, batch_size))
-        state = torch.stack(list(state), dim=0).squeeze(1).reshape(batch_size, -1).to(device)
-        # print("state shape = ", state.shape)
-        next_state = torch.from_numpy(np.array(next_state)).reshape(batch_size, -1).type(torch.float32).to(device)
-        # print("next_state shape = ", next_state.shape)
-
-        reward = torch.from_numpy(np.array(reward)).to(device)
-        # print("reward shape = ", reward.shape)
-
-
-        action = torch.from_numpy(np.array(action)).reshape(-1,1).to(device)
-        # print("action shape = ", action.shape)
-
-
-        done = torch.from_numpy(np.array(done)).long().to(device)
-        # print("done shape = ", done.shape)
-
-
-    # a'^{~}
-    curr_policy_next_action = policy(next_state)[0]
-    # print("curr_policy_next_action = ", curr_policy_next_action.shape)
-    # a^{~}
-    curr_policy_action = policy(state)[0]
-    # print("curr_policy_action = ", curr_policy_action.shape)
-
-    # Q_1(s,a)
-    current_Q_1 = Q1(state, action).squeeze()
-    # Q_2(s,a)
-    current_Q_2 = Q2(state, action).squeeze()
-
-    # Q1(s, a^{~})
-    current_Q_new_1 = Q1(state, curr_policy_action).squeeze()
-    # Q2(s, a^{~})
-    current_Q_new_2 = Q2(state, curr_policy_action).squeeze()
-
-    # print("current_Q_new = ", current_Q_new.shape)
-
-    # Q1(s', a'^{~})
-    next_state_Q_1 = target_Q1(next_state, curr_policy_next_action).squeeze()
-    # Q2(s', a'^{~})
-    next_state_Q_2 = target_Q2(next_state, curr_policy_next_action).squeeze()
-    # print("next_state_Q = ", next_state_Q.shape)
-    log_probs_next_action = policy(next_state)[1]
-
-    log_probs_current_action = policy(state)[1]
-    # y(r, s', d)
-    target = reward + gamma*(1-done)*(torch.min(next_state_Q_1, next_state_Q_2) - ent_coeff*log_probs_next_action)
-
-    # Q_loss = ((current_Q - target)**2).mean()
-    # Q1_opt.zero_grad()
-    # Q_loss.backward()
-    # Q1_opt.step()
-    # policy_loss = (current_Q_new-ent_coeff*torch.log(policy(next_state)[1])).mean()
-    # policy_opt.zero_grad()
-    # policy_loss.backward()
-    # policy_opt.step()
-
-
-
-    # Simulataenously summing both Q and policy loss. Otherwise, I was getting an error
-    total_loss = ((current_Q_1 - target)**2).mean() + ((current_Q_2 - target)**2).mean() + (torch.min(current_Q_new_1, current_Q_new_2)-ent_coeff*log_probs_current_action).mean()
-    Q1_opt.zero_grad()
-    policy_opt.zero_grad()
-    total_loss.backward()
-    Q1_opt.step()
-    policy_opt.step()
-
-    with torch.no_grad():
-        for target_param, online_param in zip(target_Q1.parameters(), Q1.parameters()):
-            target_param.data.mul_(polyak)
-            target_param.data.add_(online_param.data * (1 - polyak))
-
-        for target_param, online_param in zip(target_Q2.parameters(), Q2.parameters()):
-            target_param.data.mul_(polyak)
-            target_param.data.add_(online_param.data * (1 - polyak))
 check_learning_start = True
 for i in range(episodes):
     print("i = ", i)
@@ -210,12 +125,7 @@ for i in range(episodes):
         if done:
             tot_rewards.append(eps_rew)
             break
-        if len(replay_buffer)>mem_size and check_learning_start:
-            print("The learning process has started")
-            check_learning_start = False
 
-        if len(replay_buffer)>mem_size:
-            update()
         state = torch.tensor(next_state, dtype=torch.float32).squeeze().unsqueeze(0)
     print("Episode reward = ", eps_rew)
     tot_rewards.append(eps_rew)
@@ -225,9 +135,7 @@ for i in range(episodes):
         plt.show(block=False)
         plt.pause(3)
         plt.close()
-        torch.save(policy.state_dict(), PATH)
-        torch.save(Q1.state_dict(), PATH)
-        torch.save(Q2.state_dict(), PATH)
+
 
 
 

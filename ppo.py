@@ -63,43 +63,6 @@ class Critic(nn.Module):
         return x
 
 
-# def rollout():
-#     transitions = []
-#     disc_reward_list = []
-#     for i in range(ppo_batch):
-#         obs = torch.tensor(env.reset(), dtype=torch.float32).unsqueeze(0)
-#
-#         all_rewards = []
-#
-#         iter = 0
-#         done = False
-#         tot_rewards = 0
-#         while not done:
-#             act_probs = torch.distributions.Categorical(actor(obs.to(device)))
-#             action = act_probs.sample().squeeze()
-#             action = action.cpu().detach().numpy()
-#             next_state, reward, done, info = env.step(action)
-#             action = torch.tensor(action, dtype=torch.float32).to(device)
-#             all_rewards.append(reward)
-#             tot_rewards += reward
-#             iter += 1
-#             transitions.append((obs, action, act_probs.log_prob(action)))
-#             obs = torch.tensor(next_state, dtype=torch.float32).unsqueeze(0)
-#         print("tot_rewards = ", tot_rewards)
-#         eps_rew = 0
-#         eps_rew_list = []
-#         for reward in reversed(all_rewards):
-#             eps_rew = eps_rew*gamma + reward
-#             eps_rew_list.append(eps_rew)
-#
-#         for rtgs in reversed(eps_rew_list):
-#             disc_reward_list.append(rtgs)
-#     batch_obs = torch.Tensor([s.numpy() for (s, a, a_p) in transitions]).to(device)
-#     batch_act = torch.Tensor([a for (s, a, a_p) in transitions]).to(device)
-#     batch_log_probs = torch.Tensor([a_p for (s, a, a_p) in transitions]).to(device)
-#     batch_rtgs = torch.Tensor(disc_reward_list).to(device)
-#
-#     return batch_obs, batch_act, batch_log_probs, batch_rtgs
 
 
 def rollout():

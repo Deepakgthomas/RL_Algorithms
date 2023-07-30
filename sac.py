@@ -87,7 +87,7 @@ class PolicyNetwork(nn.Module):
 
         dist = Normal(mu, torch.clamp(sigma, min=0.00001))
         if not deterministic:
-            action = dist.rsample()
+            action = mu
         else:
             action = mu
 
@@ -176,6 +176,8 @@ def update():
     total_loss.backward()
     Q1_opt.step()
     policy_opt.step()
+
+
 check_learning_start = True
 for i in range(episodes):
     print("i = ", i)
