@@ -7,7 +7,7 @@ if __name__ == '__main__':
     import gym
     import torch
     import random
-
+    import matplotlib.pyplot as plt
     from torch import nn
 
     torch.manual_seed(798)
@@ -15,19 +15,20 @@ if __name__ == '__main__':
     torch.manual_seed(0)
     random.seed(0)
     np.random.seed(0)
-    num_envs = 8
+    from collections import deque
+    num_envs = 20
     env = gym.vector.make('Acrobot-v1', num_envs=num_envs)
     env.seed(0)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    learning_rate = 2.5e-4
-    episodes = 10000
+    learning_rate = 0.00025
+    episodes = 200
     gamma = 0.99
     clip = 0.2
 
     #No idea whether these hyperparameters are good
-    ppo_batch = 60
-    training_iters = 5
+    ppo_batch = 100
+    training_iters = 40
 
 
     # dim_action = env.action_space.shape[0]
@@ -66,21 +67,24 @@ if __name__ == '__main__':
         def forward(self, x):
             x = self.linear_stack(x)
             return x
+
     actor = Actor(env.observation_space.shape[1], env.action_space[0].n).to(device)
     critic = Critic(env.observation_space.shape[1], 1).to(device)
     policy_opt = torch.optim.Adam(params = actor.parameters(), lr = learning_rate)
     value_opt = torch.optim.Adam(params = critic.parameters(), lr = learning_rate)
     obs = torch.tensor(env.reset(), dtype=torch.float32).to(device)
-    def rollout(obs):
-        transitions = []
+    tot_rewards = np.array([0 for i in range(num_envs)], dtype=float)
+    final_scores = []
+    last_n_rewards = deque(maxlen=10)
+    def rollout(obs): #Why can't the rollout function access it from outside?
+
         disc_reward_list = []
         all_rewards = []
-        tot_rewards = np.array([0 for i in range(8)], dtype=float)
         all_actions = []
         all_actions_probs = []
         all_observations = []
         all_dones = []
-        # dones = np.array([0 for i in range(8)])
+        global tot_rewards #Why did I have to declare tot_rewards as global?
         for i in range(ppo_batch):
             act_probs = torch.distributions.Categorical(actor(obs.to(device)).squeeze())
             action = act_probs.sample().squeeze()
@@ -90,15 +94,20 @@ if __name__ == '__main__':
 
             action = torch.tensor(action, dtype=torch.float32).to(device)
             all_rewards.append(reward)
-            tot_rewards[done] = 0
             tot_rewards += reward
+            # print("tot_rewards = ", tot_rewards)
+            for reward_val, done_val in zip(tot_rewards, done):
+                if done_val:
+                    print("reward_val = ", reward_val)
+                    last_n_rewards.append(reward_val)
+                    final_scores.append(reward_val)
+            tot_rewards[done] = 0
             all_dones.append(done)
             all_observations.append(obs.cpu().detach().numpy().reshape(-1))
             all_actions.append(action.cpu().detach().numpy())
             all_actions_probs.append(act_probs.log_prob(action).cpu().detach().numpy())
 
             obs = torch.tensor(next_state, dtype=torch.float32).unsqueeze(0)
-        print("total reward = ", tot_rewards)
         eps_rew = critic(obs.to(device)).cpu().detach().numpy().reshape(num_envs)
         eps_rew_list = []
 
@@ -106,32 +115,32 @@ if __name__ == '__main__':
 
             eps_rew[done] = 0
             eps_rew = eps_rew*gamma + reward
-            eps_rew_list.append(eps_rew)
+            eps_rew_list.append(eps_rew.copy())
 
         for rtgs in reversed(eps_rew_list):
             disc_reward_list.append(rtgs)
         batch_obs = torch.Tensor(all_observations).reshape(-1,env.observation_space.shape[1]).to(device)
         batch_act = torch.Tensor(np.array(all_actions).reshape(-1)).to(device)
+
         batch_log_probs = torch.Tensor(np.array(all_actions_probs).reshape(-1)).to(device)
 
         batch_rtgs = torch.Tensor(disc_reward_list).reshape(-1).to(device)
 
+
         return batch_obs, batch_act, batch_log_probs, batch_rtgs, obs
-    # print("stuff = ",env.action_space[0].n)
-    # print("stuff = ",env.observation_space.shape[1])
 
-
-
-    score = []
     for i in range(episodes):
         print("i = ", i)
-        batch_obs, batch_act, batch_log_probs, batch_rtgs, obs = rollout(obs)
+        batch_obs, batch_act, batch_log_probs, batch_rtgs, obs= rollout(obs)
         value = critic(batch_obs).squeeze()
 
 
         # todo Why are we detaching value
         A_k = batch_rtgs - value.squeeze().detach()
-        A_k = (A_k - A_k.mean())/A_k.std() + 1e-8
+
+
+
+        A_k = (A_k - A_k.mean())/(A_k.std() + 1e-8)
 
         for _ in range(training_iters):
             value = critic(batch_obs).squeeze()
@@ -162,6 +171,10 @@ if __name__ == '__main__':
             value_opt.zero_grad()
             critic_loss.backward(retain_graph=True)
             value_opt.step()
+
+    plt.plot(final_scores)
+    plt.show()
+
 
 
 

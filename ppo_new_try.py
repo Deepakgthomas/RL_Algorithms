@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 torch.manual_seed(0)
 random.seed(0)
 np.random.seed(0)
-env = gym.make('Acrobot-v1')
+env = gym.make('CartPole-v1')
 env.seed(0)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -69,7 +69,6 @@ def rollout():
     disc_reward_list = []
     for i in range(ppo_batch):
         obs = torch.tensor(env.reset(), dtype=torch.float32).unsqueeze(0)
-        print("obs = ", obs.shape)
         all_rewards = []
 
         iter = 0
@@ -77,7 +76,6 @@ def rollout():
         tot_rewards = 0
         while not done:
             act_probs = torch.distributions.Categorical(actor(obs.to(device)))
-            print("act_probs = ", act_probs)
             action = act_probs.sample().squeeze()
             action = action.cpu().detach().numpy()
             next_state, reward, done, info = env.step(action)
