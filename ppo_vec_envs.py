@@ -18,7 +18,9 @@ if __name__ == '__main__':
     from collections import deque
     num_envs = 20
     batches = 4
-    env = gym.vector.make('Acrobot-v1', num_envs=num_envs)
+    gae_lambda = 0.5
+    ent_coeff = 0.1
+    env = gym.vector.make('CartPole-v1', num_envs=num_envs)
     env.seed(0)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -110,14 +112,33 @@ if __name__ == '__main__':
 
             obs = torch.tensor(next_state, dtype=torch.float32).unsqueeze(0)
         eps_rew = critic(obs.to(device)).cpu().detach().numpy().reshape(num_envs)
+        val_next_state = eps_rew.copy()
         eps_rew_list = []
+        inv_eps_adv_list = []
 
         for reward, done in zip(reversed(all_rewards), reversed(all_dones)):
-
             eps_rew[done] = 0
             eps_rew = eps_rew*gamma + reward
             eps_rew_list.append(eps_rew.copy())
+        next_adv = np.array([0 for i in range(num_envs)], dtype=float)
+        # batch_obs = torch.Tensor(all_observations).reshape(-1, env.observation_space.shape[1]).to(device)
+        batch_obs = torch.Tensor(all_observations).reshape(-1, num_envs, env.observation_space.shape[1])
 
+        for reward,done,obs in zip(reversed(all_rewards), reversed(all_dones), reversed(batch_obs)):
+
+            next_adv[done] = 0
+            val_next_state[done] = 0
+            val_current_state = critic(obs.to(device)).cpu().detach().numpy().reshape(-1)
+            delta = reward + gamma*val_next_state-val_current_state
+            adv = delta + gae_lambda * gamma * next_adv
+
+            inv_eps_adv_list.append(adv)
+            next_adv = adv.copy()
+            val_next_state = val_current_state.copy()
+
+        final_adv_list = []
+        for a in reversed(inv_eps_adv_list):
+            final_adv_list.append(a)
         for rtgs in reversed(eps_rew_list):
             disc_reward_list.append(rtgs)
         batch_obs = torch.Tensor(all_observations).reshape(-1,env.observation_space.shape[1]).to(device)
@@ -126,18 +147,18 @@ if __name__ == '__main__':
         batch_log_probs = torch.Tensor(np.array(all_actions_probs).reshape(-1)).to(device)
 
         batch_rtgs = torch.Tensor(disc_reward_list).reshape(-1).to(device)
+        batch_advantages = torch.Tensor(final_adv_list).reshape(-1).to(device)
 
 
-        return batch_obs, batch_act, batch_log_probs, batch_rtgs, obs
+
+        return batch_obs, batch_act, batch_log_probs, batch_rtgs, batch_advantages, obs
 
     for i in range(episodes):
         print("i = ", i)
-        all_obs, all_act, all_log_probs, all_rtgs, obs = rollout(obs)
+        all_obs, all_act, all_log_probs, all_rtgs, all_advantages, obs = rollout(obs)
         value = critic(all_obs).squeeze()
 
-        # todo Why are we detaching value
-        A_k = all_rtgs - value.squeeze().detach()
-        A_k = (A_k - A_k.mean()) / (A_k.std() + 1e-8)
+        all_advantages = (all_advantages - all_advantages.mean()) / (all_advantages.std() + 1e-8)
 
 
 
@@ -163,15 +184,17 @@ if __name__ == '__main__':
 
                 batch_rtgs = all_rtgs[batch_index]
 
-                batch_advantages = A_k[batch_index]
+                batch_advantages = all_advantages[batch_index]
 
                 value = critic(batch_obs).squeeze()
                 assert(value.ndim==1)
                 policy = actor(batch_obs).squeeze()
 
                 act_probs = torch.distributions.Categorical(policy)
+
+                batch_entropy = act_probs.entropy().mean()
+
                 log_probs = act_probs.log_prob(batch_act).squeeze()
-                # print("log_probs = ", log_probs)
 
                 ratios = torch.exp(log_probs - batch_log_probs)
                 assert(ratios.ndim==1)
@@ -180,7 +203,7 @@ if __name__ == '__main__':
                 assert (surr1.ndim == 1)
                 surr2 = torch.clamp(ratios, 1 - clip, 1 + clip)*batch_advantages
                 assert (surr2.ndim == 1)
-                actor_loss = -torch.min(surr1, surr2).mean()
+                actor_loss = -torch.min(surr1, surr2).mean() - ent_coeff*batch_entropy
                 critic_loss = (value - batch_rtgs).pow(2).mean()
 
 

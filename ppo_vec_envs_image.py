@@ -33,6 +33,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     learning_rate = 0.00025
     episodes = 500
+    gae_lambda = 0.5
     gamma = 0.99
     clip = 0.2
 
@@ -147,14 +148,28 @@ if __name__ == '__main__':
 
             obs = torch.tensor(next_state, dtype=torch.float32)
         eps_rew = critic(obs.to(device)).cpu().detach().numpy().reshape(num_envs)
+        val_next_state = eps_rew.copy()
         eps_rew_list = []
+        inv_eps_adv_list = []
 
         for reward, done in zip(reversed(all_rewards), reversed(all_dones)):
 
             eps_rew[done] = 0
             eps_rew = eps_rew*gamma + reward
             eps_rew_list.append(eps_rew.copy())
+        for reward,done,obs in zip(reversed(all_rewards), reversed(all_dones), reversed(all_observations)):
+            next_adv[done] = False
+            val_next_state[done] = False
+            val_current_state = critic(obs.to(device)).cpu().detach().numpy().reshape(num_envs)
+            delta = reward + gamma*val_next_state-val_current_state
+            adv = delta + gae_lambda * gamma * next_adv
+            inv_eps_adv_list.append(adv)
+            next_adv = adv.copy()
+            val_next_state = val_current_state.copy()
 
+        final_adv_list = []
+        for a in reversed(range(inv_eps_adv_list)):
+            final_adv_list.append(a)
         for rtgs in reversed(eps_rew_list):
             disc_reward_list.append(rtgs)
         batch_obs = torch.Tensor(all_observations).reshape(-1,env.observation_space.shape[1]).to(device)
@@ -164,21 +179,22 @@ if __name__ == '__main__':
 
         batch_rtgs = torch.Tensor(disc_reward_list).reshape(-1).to(device)
 
+        batch_advantages = torch.Tensor(final_adv_list).reshape(-1).to(device)
 
-        return batch_obs, batch_act, batch_log_probs, batch_rtgs, obs
+
+        return batch_obs, batch_act, batch_log_probs, batch_rtgs, batch_advantages, obs
 
     for i in range(episodes):
         print("episodes = ", i)
-        all_obs, all_act, all_log_probs, all_rtgs, obs = rollout(obs)
+        all_obs, all_act, all_log_probs, all_rtgs, batch_advantages, obs = rollout(obs)
         all_obs = all_obs.reshape(-1,210,160,num_stack, channels)
 
 
 
         value = critic(all_obs).squeeze()
 
-        # todo Why are we detaching value
-        A_k = all_rtgs - value.squeeze().detach()
-        A_k = (A_k - A_k.mean()) / (A_k.std() + 1e-8)
+        # A_k = all_rtgs - value.squeeze().detach()
+        batch_advantages = (batch_advantages - batch_advantages.mean()) / (batch_advantages.std() + 1e-8)
 
 
 
