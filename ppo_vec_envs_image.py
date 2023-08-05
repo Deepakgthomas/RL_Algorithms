@@ -1,12 +1,13 @@
 #Modified this code - https://github.com/DeepReinforcementLearning/DeepReinforcementLearningInAction/blob/master/Chapter%204/Ch4_book.ipynb
 #Also, modified this code - https://github.com/higgsfield/RL-Adventure-2/blob/master/1.actor-critic.ipynb
 # Also, modified this code - https://github.com/ericyangyu/PPO-for-Beginners/blob/9abd435771aa84764d8d0d1f737fa39118b74019/ppo.py#L151
+# Got a help from the subreddit - reinforcement_learning
+
 if __name__ == '__main__':
 
     import numpy as np
     import gymnasium as gym
-    from gymnasium.wrappers import AtariPreprocessing, FrameStack, GrayScaleObservation, TransformObservation
-
+    from gymnasium.wrappers import AtariPreprocessing
     import torch
     import random
     import matplotlib.pyplot as plt
@@ -20,49 +21,39 @@ if __name__ == '__main__':
     np.random.seed(0)
     from collections import deque
     num_envs = 12
+    ent_coeff = 0.1
+    num_channels = 1
     num_stack = 3
     batches = 30
     channels = 3
-    def reshape_image(obs):
-        new_obs = np.array(obs).reshape(num_envs, 210, 160, 3*num_stack)
-        return new_obs
-    env = gym.vector.make("Pong-v4", num_envs=num_envs)
-    env = FrameStack(env, num_stack=num_stack)
-    env = TransformObservation(env, reshape_image)
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     learning_rate = 0.00025
     episodes = 500
     gae_lambda = 0.5
     gamma = 0.99
     clip = 0.2
-
-    #No idea whether these hyperparameters are good
     rollout_steps = 50
     training_iters = 15
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # dim_action = env.action_space.shape[0]
+    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    square_size = env.observation_space.shape[-1]
 
     class Actor(nn.Module):
         def __init__(self, state_size, action_size):
             super(Actor, self).__init__()
             self.state_size = state_size
             self.action_size = action_size
-            self.grayscale = tv.transforms.Grayscale()
-            self.conv1 = nn.Conv2d(num_stack, 6, 5)
+            self.conv1 = nn.Conv2d(num_channels, 6, 5)
             self.pool = nn.MaxPool2d(2, 2)
             self.conv2 = nn.Conv2d(6, 16, 3)
             self.conv3 = nn.Conv2d(16, 32, 3)
-            self.fc1 = nn.Linear(13824, 120)
+            self.fc1 = nn.Linear(2048, 120)
             self.fc2 = nn.Linear(120, 84)
             self.fc3 = nn.Linear(84, action_size)
             self.last = nn.Softmax(dim=-1)
+
         def forward(self,x):
-            x = x.reshape(-1, 210, 160, num_stack, 3)
-            x = x.permute(0, 3, 4, 2, 1)
-            x = self.grayscale(x)
-            x = x.reshape(-1, num_stack, 210, 160)
             x = self.pool(F.relu(self.conv1(x)))
             x = self.pool(F.relu(self.conv2(x)))
             x = self.pool(F.relu(self.conv3(x)))
@@ -78,23 +69,16 @@ if __name__ == '__main__':
             super(Critic, self).__init__()
             self.state_size = state_size
             self.action_size = action_size
-            self.grayscale = tv.transforms.Grayscale()
-            self.conv1 = nn.Conv2d(num_stack, 6, 5)
+            self.conv1 = nn.Conv2d(num_channels, 6, 5)
             self.pool = nn.MaxPool2d(2, 2)
             self.conv2 = nn.Conv2d(6, 16, 3)
             self.conv3 = nn.Conv2d(16, 32, 3)
-            self.fc1 = nn.Linear(13824, 120)
+            self.fc1 = nn.Linear(2048, 120)
             self.fc2 = nn.Linear(120, 84)
             self.fc3 = nn.Linear(84, 1)
 
         def forward(self, x):
-            x = x.reshape(-1, 210, 160, num_stack, 3)
-            x = x.permute(0, 3, 4, 2, 1)
-
-            x = self.grayscale(x)
-
-            x = x.reshape(-1, num_stack, 210, 160)
-
+            x = x.reshape(-1, 1, square_size, square_size)
             x = self.pool(F.relu(self.conv1(x)))
             x = self.pool(F.relu(self.conv2(x)))
             x = self.pool(F.relu(self.conv3(x)))
@@ -108,32 +92,29 @@ if __name__ == '__main__':
     critic = Critic(env.observation_space.shape[-1], 1).to(device)
     policy_opt = torch.optim.Adam(params = actor.parameters(), lr = learning_rate)
     value_opt = torch.optim.Adam(params = critic.parameters(), lr = learning_rate)
-    obs = torch.tensor(env.reset()[0], dtype=torch.float32).to(device) #Gymnasium is quite different from gym
-
+    obs = torch.tensor(env.reset()[0], dtype=torch.float32).to(device)
 
     tot_rewards = np.array([0 for i in range(num_envs)], dtype=float)
     final_scores = []
     last_n_rewards = deque(maxlen=10)
-    def rollout(obs): #Why can't the rollout function access it from outside?
+    def rollout(obs): #todo Why can't the rollout function access it from outside?
 
-        disc_reward_list = []
         all_rewards = []
         all_actions = []
         all_actions_probs = []
         all_observations = []
         all_dones = []
-        global tot_rewards #Why did I have to declare tot_rewards as global?
-        for i in range(rollout_steps):
+        global tot_rewards #todo Why did I have to declare tot_rewards as global?
 
-            foo = actor(obs.to(device))
+        for i in range(rollout_steps):
+            obs = obs.reshape(num_envs, 1, square_size, square_size)
             act_probs = torch.distributions.Categorical(actor(obs.to(device)).squeeze())
             action = act_probs.sample().squeeze()
             action = action.cpu().detach().numpy()
-
             next_state, reward, done, truncated, info = env.step(action)
-
             action = torch.tensor(action, dtype=torch.float32).to(device)
-            all_rewards.append(reward)
+
+            # These statistics help determine how well the agent is performing.
             tot_rewards += reward
             for reward_val, done_val in zip(tot_rewards, done):
                 if done_val:
@@ -141,66 +122,69 @@ if __name__ == '__main__':
                     last_n_rewards.append(reward_val)
                     final_scores.append(reward_val)
             tot_rewards[done] = 0
+
+            all_rewards.append(reward)
             all_dones.append(done)
-            all_observations.append(obs.cpu().detach().numpy().reshape(-1))
+            all_observations.append(obs.cpu().detach().numpy())
             all_actions.append(action.cpu().detach().numpy())
             all_actions_probs.append(act_probs.log_prob(action).cpu().detach().numpy())
-
             obs = torch.tensor(next_state, dtype=torch.float32)
-        eps_rew = critic(obs.to(device)).cpu().detach().numpy().reshape(num_envs)
-        val_next_state = eps_rew.copy()
+
+        # Computing values over here
+        eps_rew = critic(obs.to(device)).cpu().detach().numpy().reshape(-1)
         eps_rew_list = []
-        inv_eps_adv_list = []
-
+        state_value_list = []
         for reward, done in zip(reversed(all_rewards), reversed(all_dones)):
-
             eps_rew[done] = 0
             eps_rew = eps_rew*gamma + reward
             eps_rew_list.append(eps_rew.copy())
-        for reward,done,obs in zip(reversed(all_rewards), reversed(all_dones), reversed(all_observations)):
-            next_adv[done] = False
-            val_next_state[done] = False
-            val_current_state = critic(obs.to(device)).cpu().detach().numpy().reshape(num_envs)
+        next_adv = np.array([0 for i in range(num_envs)], dtype=float)
+        batch_obs = torch.Tensor(all_observations).reshape(-1, num_envs, square_size, square_size)
+        for rtgs in reversed(eps_rew_list):
+            state_value_list.append(rtgs)
+
+        # Computing advantages over here, A = Q - V
+        val_next_state = eps_rew.copy()
+        inv_eps_adv_list = []
+        for reward,done,obs in zip(reversed(all_rewards), reversed(all_dones), reversed(batch_obs)):
+            next_adv[done] = 0
+            val_next_state[done] = 0
+            val_current_state = critic(obs.to(device)).cpu().detach().numpy().reshape(-1)
             delta = reward + gamma*val_next_state-val_current_state
             adv = delta + gae_lambda * gamma * next_adv
             inv_eps_adv_list.append(adv)
             next_adv = adv.copy()
             val_next_state = val_current_state.copy()
-
         final_adv_list = []
-        for a in reversed(range(inv_eps_adv_list)):
+        for a in reversed(inv_eps_adv_list):
             final_adv_list.append(a)
-        for rtgs in reversed(eps_rew_list):
-            disc_reward_list.append(rtgs)
+
+        # Returning all the data from the rollout. `obs` needs to be returned because the episode might not be over
+        # for some environment
         batch_obs = torch.Tensor(all_observations).reshape(-1,env.observation_space.shape[1]).to(device)
         batch_act = torch.Tensor(np.array(all_actions).reshape(-1)).to(device)
-
         batch_log_probs = torch.Tensor(np.array(all_actions_probs).reshape(-1)).to(device)
-
-        batch_rtgs = torch.Tensor(disc_reward_list).reshape(-1).to(device)
-
+        batch_rtgs = torch.Tensor(state_value_list).reshape(-1).to(device)
         batch_advantages = torch.Tensor(final_adv_list).reshape(-1).to(device)
-
-
         return batch_obs, batch_act, batch_log_probs, batch_rtgs, batch_advantages, obs
 
+    #Learning Phase
     for i in range(episodes):
         print("episodes = ", i)
-        all_obs, all_act, all_log_probs, all_rtgs, batch_advantages, obs = rollout(obs)
-        all_obs = all_obs.reshape(-1,210,160,num_stack, channels)
+        all_obs, all_act, all_log_probs, all_rtgs, all_advantages, obs = rollout(obs)
+        all_obs = all_obs.reshape(-1, 1, square_size, square_size)
 
-
+        assert (all_obs.shape == (rollout_steps*num_envs, num_channels, square_size, square_size))
+        assert (all_act.shape == (rollout_steps*num_envs,))
+        assert (all_log_probs.shape == (rollout_steps*num_envs,))
+        assert (all_rtgs.shape == (rollout_steps*num_envs,))
+        assert (all_advantages.shape == (rollout_steps*num_envs,))
 
         value = critic(all_obs).squeeze()
-
-        # A_k = all_rtgs - value.squeeze().detach()
-        batch_advantages = (batch_advantages - batch_advantages.mean()) / (batch_advantages.std() + 1e-8)
-
-
-
+        # Standardize all advantages
+        all_advantages = (all_advantages - all_advantages.mean()) / (all_advantages.std() + 1e-8)
 
         for _ in range(training_iters):
-
             total_examples = num_envs * rollout_steps
             batch_size = total_examples // batches
             batch_starts = np.arange(0, total_examples, batch_size)
@@ -209,36 +193,27 @@ if __name__ == '__main__':
 
             for batch_start in batch_starts:
                 batch_end = batch_start + batch_size
-
                 batch_index = indices[batch_start:batch_end]
-
                 batch_obs = all_obs[batch_index]
-
                 batch_act = all_act[batch_index]
-
                 batch_log_probs = all_log_probs[batch_index]
-
                 batch_rtgs = all_rtgs[batch_index]
-
-                batch_advantages = A_k[batch_index]
+                batch_advantages = all_advantages[batch_index]
 
                 value = critic(batch_obs).squeeze()
                 assert(value.ndim==1)
                 policy = actor(batch_obs)
-
                 act_probs = torch.distributions.Categorical(policy)
-
+                batch_entropy = act_probs.entropy().mean()
                 log_probs = act_probs.log_prob(batch_act).squeeze()
-
                 ratios = torch.exp(log_probs - batch_log_probs)
                 assert(ratios.ndim==1)
                 surr1 = ratios*batch_advantages
                 assert (surr1.ndim == 1)
                 surr2 = torch.clamp(ratios, 1 - clip, 1 + clip)*batch_advantages
                 assert (surr2.ndim == 1)
-                actor_loss = -torch.min(surr1, surr2).mean()
+                actor_loss = -torch.min(surr1, surr2).mean()  - ent_coeff*batch_entropy
                 critic_loss = (value - batch_rtgs).pow(2).mean()
-
 
                 #todo No idea why we are doing retain_graph = True
                 policy_opt.zero_grad()

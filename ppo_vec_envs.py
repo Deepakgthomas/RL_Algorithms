@@ -1,6 +1,8 @@
 #Modified this code - https://github.com/DeepReinforcementLearning/DeepReinforcementLearningInAction/blob/master/Chapter%204/Ch4_book.ipynb
 #Also, modified this code - https://github.com/higgsfield/RL-Adventure-2/blob/master/1.actor-critic.ipynb
 # Also, modified this code - https://github.com/ericyangyu/PPO-for-Beginners/blob/9abd435771aa84764d8d0d1f737fa39118b74019/ppo.py#L151
+# Got a help from the subreddit - reinforcement_learning
+
 if __name__ == '__main__':
 
     import numpy as np
@@ -19,8 +21,8 @@ if __name__ == '__main__':
     num_envs = 20
     batches = 4
     gae_lambda = 0.5
-    ent_coeff = 0.1
-    env = gym.vector.make('CartPole-v1', num_envs=num_envs)
+    ent_coeff = 0.3
+    env = gym.vector.make('Acrobot-v1', num_envs=num_envs)
     env.seed(0)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -121,7 +123,6 @@ if __name__ == '__main__':
             eps_rew = eps_rew*gamma + reward
             eps_rew_list.append(eps_rew.copy())
         next_adv = np.array([0 for i in range(num_envs)], dtype=float)
-        # batch_obs = torch.Tensor(all_observations).reshape(-1, env.observation_space.shape[1]).to(device)
         batch_obs = torch.Tensor(all_observations).reshape(-1, num_envs, env.observation_space.shape[1])
 
         for reward,done,obs in zip(reversed(all_rewards), reversed(all_dones), reversed(batch_obs)):
