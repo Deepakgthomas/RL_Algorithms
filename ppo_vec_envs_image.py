@@ -25,19 +25,19 @@ if __name__ == '__main__':
     num_channels = 1
     batches = 4
     channels = 3
-    learning_rate = 0.00025
-    episodes = 1500
+    learning_rate = 0.00075
+    episodes = 4000
     gae_lambda = 0.95
     gamma = 0.99
     clip = 0.2
-    rollout_steps = 100
+    rollout_steps = 200
     training_iters = 4
     actor_PATH = './actor_model.pt'
     critic_PATH = './critic_model.pt'
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    env = gym.vector.make("PongNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
     square_size = env.observation_space.shape[-1]
 
     class Actor(nn.Module):
@@ -225,7 +225,7 @@ if __name__ == '__main__':
                 critic_loss.backward(retain_graph=True)
                 value_opt.step()
 
-        if episode % 50 == 0:
+        if episode % 100 == 0:
             print("Saved")
             torch.save(actor.state_dict(), actor_PATH)
             torch.save(critic.state_dict(), critic_PATH)

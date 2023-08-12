@@ -37,11 +37,12 @@ if __name__ == '__main__':
     training_iters = 4
     actor_PATH = 'actor_model.pt'
     critic_PATH = 'critic_model.pt'
-    gif_path = './saved_rl_video.gif'
 
     device = torch.device("cpu")
 
-    env = gym.make("PongNoFrameskip-v4", render_mode = "rgb_array")
+    env = gym.make("BreakoutNoFrameskip-v4", render_mode = "rgb_array")
+    gif_path = './saved_rl_video' + 'breakout' + '.gif'
+
     env = AtariPreprocessing(env)
     square_size = env.observation_space.shape[-1]
 
