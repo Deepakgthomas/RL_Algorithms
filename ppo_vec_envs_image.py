@@ -1,7 +1,7 @@
 #Modified this code - https://github.com/DeepReinforcementLearning/DeepReinforcementLearningInAction/blob/master/Chapter%204/Ch4_book.ipynb
 #Also, modified this code - https://github.com/higgsfield/RL-Adventure-2/blob/master/1.actor-critic.ipynb
 # Also, modified this code - https://github.com/ericyangyu/PPO-for-Beginners/blob/9abd435771aa84764d8d0d1f737fa39118b74019/ppo.py#L151
-# Got a help from the subreddit - reinforcement_learning
+# Got a lot of help from the subreddit - reinforcement_learning
 
 if __name__ == '__main__':
 
@@ -21,22 +21,21 @@ if __name__ == '__main__':
     np.random.seed(0)
     from collections import deque
     num_envs = 12
-    ent_coeff = 0.1
+    ent_coeff = 0.01
     num_channels = 1
-    num_stack = 3
-    batches = 30
+    batches = 4
     channels = 3
     learning_rate = 0.00025
-    episodes = 500
-    gae_lambda = 0.5
+    episodes = 2000
+    gae_lambda = 0.95
     gamma = 0.99
     clip = 0.2
-    rollout_steps = 50
-    training_iters = 15
+    rollout_steps = 100
+    training_iters = 4
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    env = gym.vector.make("PongNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
     square_size = env.observation_space.shape[-1]
 
     class Actor(nn.Module):
@@ -180,11 +179,11 @@ if __name__ == '__main__':
         assert (all_rtgs.shape == (rollout_steps*num_envs,))
         assert (all_advantages.shape == (rollout_steps*num_envs,))
 
-        value = critic(all_obs).squeeze()
         # Standardize all advantages
         all_advantages = (all_advantages - all_advantages.mean()) / (all_advantages.std() + 1e-8)
 
-        for _ in range(training_iters):
+        for i in range(training_iters):
+            print("Training Iteration = ", i)
             total_examples = num_envs * rollout_steps
             batch_size = total_examples // batches
             batch_starts = np.arange(0, total_examples, batch_size)
