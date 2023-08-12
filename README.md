@@ -11,6 +11,5 @@ The algorithms I have implemented are  -
 
 Trained Agents - 
 
-![](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/saved_rl_video.gif)      
-
+![](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/saved_rl_video.gif)
 ![](saved_rl_videobreakout.gif)
