@@ -26,12 +26,14 @@ if __name__ == '__main__':
     batches = 4
     channels = 3
     learning_rate = 0.00025
-    episodes = 2000
+    episodes = 1500
     gae_lambda = 0.95
     gamma = 0.99
     clip = 0.2
     rollout_steps = 100
     training_iters = 4
+    actor_PATH = './actor_model.pt'
+    critic_PATH = './critic_model.pt'
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -168,8 +170,8 @@ if __name__ == '__main__':
         return batch_obs, batch_act, batch_log_probs, batch_rtgs, batch_advantages, obs
 
     #Learning Phase
-    for i in range(episodes):
-        print("episodes = ", i)
+    for episode in range(episodes):
+        print("episodes = ", episode)
         all_obs, all_act, all_log_probs, all_rtgs, all_advantages, obs = rollout(obs)
         all_obs = all_obs.reshape(-1, 1, square_size, square_size)
 
@@ -222,6 +224,11 @@ if __name__ == '__main__':
                 value_opt.zero_grad()
                 critic_loss.backward(retain_graph=True)
                 value_opt.step()
+
+        if episode % 50 == 0:
+            print("Saved")
+            torch.save(actor.state_dict(), actor_PATH)
+            torch.save(critic.state_dict(), critic_PATH)
 
     plt.plot(final_scores)
     plt.show()
