@@ -26,18 +26,19 @@ if __name__ == '__main__':
     batches = 4
     channels = 3
     learning_rate = 0.00075
-    episodes = 4000
+    episodes = 1500
     gae_lambda = 0.95
     gamma = 0.99
     clip = 0.2
     rollout_steps = 200
     training_iters = 4
-    actor_PATH = './actor_model.pt'
-    critic_PATH = './critic_model.pt'
+
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    env = gym.vector.make("PongNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    actor_PATH = './actor_model' + 'pong' + '.pt'
+    critic_PATH = './critic_model ' + 'pong'+ '.pt'
     square_size = env.observation_space.shape[-1]
 
     class Actor(nn.Module):
