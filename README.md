@@ -11,7 +11,5 @@ The algorithms I have implemented are  -
 
 Trained Agents - 
 
-![Pong](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/saved_rl_videopong.gif)
-
-![Breakout](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/saved_rl_videobreakout.gif)
+![Pong](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/saved_rl_videopong.gif)   ![Breakout](https://github.com/Deepakgthomas/RL_Algorithms/blob/main/saved_rl_videobreakout.gif)
 
