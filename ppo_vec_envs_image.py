@@ -21,11 +21,11 @@ if __name__ == '__main__':
     np.random.seed(0)
     from collections import deque
     num_envs = 12
-    ent_coeff = 0.01
+    ent_coeff = 0.03
     num_channels = 1
     batches = 4
     channels = 3
-    learning_rate = 0.00075
+    learning_rate = 0.00025
     episodes = 1500
     gae_lambda = 0.95
     gamma = 0.99
@@ -36,8 +36,8 @@ if __name__ == '__main__':
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    env = gym.vector.make("PongNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
-    actor_PATH = './actor_model' + 'pong' + '.pt'
+    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    actor_PATH = './actor_model' + 'breakout' + '.pt'
     critic_PATH = './critic_model ' + 'pong'+ '.pt'
     square_size = env.observation_space.shape[-1]
 
