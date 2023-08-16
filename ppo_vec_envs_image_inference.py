@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     device = torch.device("cpu")
 
-    env = gym.make("BreakoutNoFrameskip-v4", render_mode = "rgb_array")
+    env = gym.make("BreakoutNoFrameskip-v4", render_mode = "human")
     gif_path = './saved_rl_video' + 'breakout' + '.gif'
 
     env = AtariPreprocessing(env)
@@ -83,7 +83,7 @@ if __name__ == '__main__':
     last_n_rewards = deque(maxlen=10)
     obs = obs.reshape(num_envs, 1, square_size, square_size)
     frames = []
-    for _ in range(1000):
+    for _ in range(5000):
 
         act_probs = torch.distributions.Categorical(actor(obs).squeeze())
         action = act_probs.sample().squeeze()
