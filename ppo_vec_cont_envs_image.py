@@ -221,7 +221,6 @@ if __name__ == '__main__':
                 actor_loss = -torch.min(surr1, surr2).mean()  - ent_coeff*batch_entropy
                 critic_loss = (value - batch_rtgs).pow(2).mean()
 
-                #todo No idea why we are doing retain_graph = True
                 policy_opt.zero_grad()
                 actor_loss.backward(retain_graph=True)
                 policy_opt.step()
