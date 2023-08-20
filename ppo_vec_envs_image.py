@@ -35,8 +35,12 @@ if __name__ == '__main__':
 
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    import envpool
 
-    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    env = envpool.make("Pong-v5", env_type="gymnasium", num_envs=num_envs)
+    # env = AtariPreprocessing(env)
+
+    # env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
     actor_PATH = './actor_model' + 'breakout' + '.pt'
     critic_PATH = './critic_model ' + 'pong'+ '.pt'
     square_size = env.observation_space.shape[-1]
@@ -113,6 +117,7 @@ if __name__ == '__main__':
             act_probs = torch.distributions.Categorical(actor(obs.to(device)).squeeze())
             action = act_probs.sample().squeeze()
             action = action.cpu().detach().numpy()
+            print("action = ", action)
             next_state, reward, done, truncated, info = env.step(action)
             action = torch.tensor(action, dtype=torch.float32).to(device)
 

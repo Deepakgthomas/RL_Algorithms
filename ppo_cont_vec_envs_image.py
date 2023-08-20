@@ -7,7 +7,7 @@ if __name__ == '__main__':
 
     import numpy as np
     import gymnasium as gym
-    from gymnasium.wrappers import AtariPreprocessing
+    from gymnasium.wrappers import AtariPreprocessing, GrayScaleObservation
     import torch
     import random
     import matplotlib.pyplot as plt
@@ -36,10 +36,12 @@ if __name__ == '__main__':
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    env = gym.vector.make("CarRacing-v2",num_envs = num_envs, wrappers=GrayScaleObservation)
+    # env = GrayScaleObservation(env)
     actor_PATH = './actor_model' + 'breakout' + '.pt'
     critic_PATH = './critic_model ' + 'pong'+ '.pt'
     square_size = env.observation_space.shape[-1]
+    print("square_size = ", square_size)
 
     class Actor(nn.Module):
         def __init__(self, state_size, action_size):
@@ -50,10 +52,12 @@ if __name__ == '__main__':
             self.pool = nn.MaxPool2d(2, 2)
             self.conv2 = nn.Conv2d(6, 16, 3)
             self.conv3 = nn.Conv2d(16, 32, 3)
-            self.fc1 = nn.Linear(2048, 120)
+            self.fc1 = nn.Linear(3200, 120)
             self.fc2 = nn.Linear(120, 84)
-            self.fc3 = nn.Linear(84, action_size)
-            self.last = nn.Softmax(dim=-1)
+            self.mean = nn.Linear(84, action_size)
+            self.std = nn.Linear(84, action_size)
+
+            # self.last = nn.Softmax(dim=-1)
 
         def forward(self,x):
             x = self.pool(F.relu(self.conv1(x)))
@@ -62,13 +66,12 @@ if __name__ == '__main__':
             x = torch.flatten(x, 1)
             x = F.relu(self.fc1(x))
             x = F.relu(self.fc2(x))
+            mean = F.relu(self.mean(x)) + 0.0001
+            std = F.relu(self.std(x)) + 0.0001
 
-            # Here is my attempt at the reparameterization trick :/
-            mean = self.fc3(x)
-            std = self.fc3(x)
-            epsilon = torch.randn(self.action_size)
-            action = mean + std*epsilon
-            return action
+            normal = torch.distributions.Normal(mean, std)
+            action = normal.rsample()
+            return normal, action
 
     class Critic(nn.Module):
         def __init__(self, state_size, action_size):
@@ -79,7 +82,7 @@ if __name__ == '__main__':
             self.pool = nn.MaxPool2d(2, 2)
             self.conv2 = nn.Conv2d(6, 16, 3)
             self.conv3 = nn.Conv2d(16, 32, 3)
-            self.fc1 = nn.Linear(2048, 120)
+            self.fc1 = nn.Linear(3200, 120)
             self.fc2 = nn.Linear(120, 84)
             self.fc3 = nn.Linear(84, 1)
 
@@ -94,7 +97,7 @@ if __name__ == '__main__':
             x = self.fc3(x)
             return x
 
-    actor = Actor(env.observation_space.shape[-1], env.action_space[0].n).to(device)
+    actor = Actor(env.observation_space.shape[-1], 3).to(device)
     critic = Critic(env.observation_space.shape[-1], 1).to(device)
     policy_opt = torch.optim.Adam(params = actor.parameters(), lr = learning_rate)
     value_opt = torch.optim.Adam(params = critic.parameters(), lr = learning_rate)
@@ -114,7 +117,7 @@ if __name__ == '__main__':
 
         for i in range(rollout_steps):
             obs = obs.reshape(num_envs, 1, square_size, square_size)
-            action = actor(obs.to(device)).squeeze()
+            act_probs, action = actor(obs.to(device))
             # action = act_probs.sample().squeeze()
             action = action.cpu().detach().numpy()
             next_state, reward, done, truncated, info = env.step(action)
@@ -168,8 +171,8 @@ if __name__ == '__main__':
         # Returning all the data from the rollout. `obs` needs to be returned because the episode might not be over
         # for some environment
         batch_obs = torch.Tensor(all_observations).reshape(-1,env.observation_space.shape[1]).to(device)
-        batch_act = torch.Tensor(np.array(all_actions).reshape(-1)).to(device)
-        batch_log_probs = torch.Tensor(np.array(all_actions_probs).reshape(-1)).to(device)
+        batch_act = torch.Tensor(np.array(all_actions).reshape(-1, env.action_space.shape[1])).to(device)
+        batch_log_probs = torch.Tensor(np.array(all_actions_probs).reshape(-1, env.action_space.shape[1])).to(device)
         batch_rtgs = torch.Tensor(state_value_list).reshape(-1).to(device)
         batch_advantages = torch.Tensor(final_adv_list).reshape(-1).to(device)
         return batch_obs, batch_act, batch_log_probs, batch_rtgs, batch_advantages, obs
@@ -178,10 +181,11 @@ if __name__ == '__main__':
     for episode in range(episodes):
         print("episodes = ", episode)
         all_obs, all_act, all_log_probs, all_rtgs, all_advantages, obs = rollout(obs)
+        all_log_probs = torch.sum(all_log_probs, dim = -1)
         all_obs = all_obs.reshape(-1, 1, square_size, square_size)
 
         assert (all_obs.shape == (rollout_steps*num_envs, num_channels, square_size, square_size))
-        assert (all_act.shape == (rollout_steps*num_envs,))
+        assert (all_act.shape == (rollout_steps*num_envs,env.action_space.shape[1]))
         assert (all_log_probs.shape == (rollout_steps*num_envs,))
         assert (all_rtgs.shape == (rollout_steps*num_envs,))
         assert (all_advantages.shape == (rollout_steps*num_envs,))
@@ -203,17 +207,19 @@ if __name__ == '__main__':
                 batch_obs = all_obs[batch_index]
                 batch_act = all_act[batch_index]
                 batch_log_probs = all_log_probs[batch_index]
+
                 batch_rtgs = all_rtgs[batch_index]
                 batch_advantages = all_advantages[batch_index]
 
                 value = critic(batch_obs).squeeze()
                 assert(value.ndim==1)
-                policy = actor(batch_obs)
+                # policy = actor(batch_obs)
                 # act_probs = torch.distributions.Categorical(policy)
-                batch_entropy = act_probs.entropy().mean()
-                log_probs = act_probs.log_prob(batch_act).squeeze()
+                act_probs, action = actor(batch_obs)
+                batch_entropy = torch.prod(act_probs.entropy(), -1).mean()
+                log_probs = torch.sum(act_probs.log_prob(batch_act), -1).squeeze()
                 ratios = torch.exp(log_probs - batch_log_probs)
-                assert(ratios.ndim==1)
+                assert (ratios.ndim==1)
                 surr1 = ratios*batch_advantages
                 assert (surr1.ndim == 1)
                 surr2 = torch.clamp(ratios, 1 - clip, 1 + clip)*batch_advantages
