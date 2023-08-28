@@ -34,12 +34,13 @@ if __name__ == '__main__':
     clip = 0.2
     rollout_steps = 200
     training_iters = 4
+    grad_clip = 5
 
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     import envpool
 
-    env = envpool.make("Pong-v5", env_type="gymnasium", num_envs=num_envs, stack_num = stack_num)
+    env = envpool.make("Breakout-v5", env_type="gymnasium", num_envs=num_envs, stack_num = stack_num)
     print("envpool observation_space.shape = ", env.observation_space.shape)
     print("envpool action_space.n= ", env.action_space.n)
     # env = AtariPreprocessing(env)
@@ -227,13 +228,22 @@ if __name__ == '__main__':
                 actor_loss = -torch.min(surr1, surr2).mean()  - ent_coeff*batch_entropy
                 critic_loss = (value - batch_rtgs).pow(2).mean()
 
-                #todo No idea why we are doing retain_graph = True
                 policy_opt.zero_grad()
-                actor_loss.backward(retain_graph=True)
+                actor_loss.backward()
+                max_gradient = np.max(np.array(list((param.grad.max().item()) for param in actor.parameters())))
+                if max_gradient > grad_clip:
+                    print("Gradients blowing up")
+
+                torch.nn.utils.clip_grad_norm_(actor.parameters(), grad_clip)
                 policy_opt.step()
 
                 value_opt.zero_grad()
-                critic_loss.backward(retain_graph=True)
+                critic_loss.backward()
+                max_gradient = np.max(np.array(list((param.grad.max().item()) for param in critic.parameters())))
+                if max_gradient > grad_clip:
+                    print("Gradients blowing up")
+                torch.nn.utils.clip_grad_norm_(critic.parameters(), grad_clip)
+
                 value_opt.step()
 
         if episode % 100 == 0:
