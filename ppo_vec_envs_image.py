@@ -2,6 +2,8 @@
 #Also, modified this code - https://github.com/higgsfield/RL-Adventure-2/blob/master/1.actor-critic.ipynb
 # Also, modified this code - https://github.com/ericyangyu/PPO-for-Beginners/blob/9abd435771aa84764d8d0d1f737fa39118b74019/ppo.py#L151
 # Got a lot of help from the subreddit - reinforcement_learning
+from tensorflow.python.autograph.operators.py_builtins import max_
+from torch._C._return_types import max
 
 if __name__ == '__main__':
 
@@ -30,17 +32,18 @@ if __name__ == '__main__':
     gae_lambda = 0.95
     gamma = 0.99
     clip = 0.2
+    grad_clip = 5
     rollout_steps = 200
     training_iters = 4
 
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    import envpool
+    # import envpool
+    #
+    # env = envpool.make("Pong-v5", env_type="gymnasium", num_envs=num_envs)
+    # # env = AtariPreprocessing(env)
 
-    env = envpool.make("Pong-v5", env_type="gymnasium", num_envs=num_envs)
-    # env = AtariPreprocessing(env)
-
-    # env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing)
+    env = gym.vector.make("BreakoutNoFrameskip-v4", num_envs=num_envs,wrappers=AtariPreprocessing, asynchronous=False)
     actor_PATH = './actor_model' + 'breakout' + '.pt'
     critic_PATH = './critic_model ' + 'pong'+ '.pt'
     square_size = env.observation_space.shape[-1]
@@ -117,7 +120,6 @@ if __name__ == '__main__':
             act_probs = torch.distributions.Categorical(actor(obs.to(device)).squeeze())
             action = act_probs.sample().squeeze()
             action = action.cpu().detach().numpy()
-            print("action = ", action)
             next_state, reward, done, truncated, info = env.step(action)
             action = torch.tensor(action, dtype=torch.float32).to(device)
 
@@ -125,7 +127,6 @@ if __name__ == '__main__':
             tot_rewards += reward
             for reward_val, done_val in zip(tot_rewards, done):
                 if done_val:
-                    print("reward_val = ", reward_val)
                     last_n_rewards.append(reward_val)
                     final_scores.append(reward_val)
             tot_rewards[done] = 0
@@ -224,11 +225,21 @@ if __name__ == '__main__':
 
                 #todo No idea why we are doing retain_graph = True
                 policy_opt.zero_grad()
-                actor_loss.backward(retain_graph=True)
+                actor_loss.backward()
+                max_gradient = np.max(np.array(list((param.grad.max().item()) for param in actor.parameters())))
+                if max_gradient > grad_clip:
+                    print("Gradients blowing up")
+
+                torch.nn.utils.clip_grad_norm_(actor.parameters(), grad_clip)
                 policy_opt.step()
 
                 value_opt.zero_grad()
-                critic_loss.backward(retain_graph=True)
+                critic_loss.backward()
+                max_gradient = np.max(np.array(list((param.grad.max().item()) for param in critic.parameters())))
+                if max_gradient > grad_clip:
+                    print("Gradients blowing up")
+                torch.nn.utils.clip_grad_norm_(critic.parameters(), grad_clip)
+
                 value_opt.step()
 
         if episode % 100 == 0:
