@@ -20,19 +20,21 @@ if __name__ == '__main__':
     random.seed(0)
     np.random.seed(0)
     from collections import deque
+    from torch.optim.lr_scheduler import MultiStepLR
+
     num_envs = 12
-    ent_coeff = 0.03
+    ent_coeff = 0.1
     batches = 4
     channels = 3
-    learning_rate = 0.00025
+    learning_rate = 0.0003
     episodes = 1500
     gae_lambda = 0.95
-    stack_num = 4
+    stack_num = 8
     num_channels = stack_num
 
     gamma = 0.99
     clip = 0.2
-    rollout_steps = 200
+    rollout_steps = 400
     training_iters = 4
     grad_clip = 0.5
 
@@ -40,7 +42,7 @@ if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     import envpool
 
-    env = envpool.make("Breakout-v5", env_type="gymnasium", num_envs=num_envs, stack_num = stack_num)
+    env = envpool.make("Breakout-v5", env_type="gymnasium", num_envs=num_envs, stack_num = stack_num, episodic_life = True)
     print("envpool observation_space.shape = ", env.observation_space.shape)
     print("envpool action_space.n= ", env.action_space.n)
     # env = AtariPreprocessing(env)
@@ -103,6 +105,9 @@ if __name__ == '__main__':
     critic = Critic(env.observation_space.shape[-1], 1).to(device)
     policy_opt = torch.optim.Adam(params = actor.parameters(), lr = learning_rate)
     value_opt = torch.optim.Adam(params = critic.parameters(), lr = learning_rate)
+    policy_scheduler = MultiStepLR(policy_opt, milestones = [700], gamma=0.1,verbose=True)
+    value_scheduler = MultiStepLR(policy_opt, milestones = [700], gamma=0.1,verbose=True)
+
     obs = torch.tensor(env.reset()[0], dtype=torch.float32).to(device)
 
     tot_rewards = np.array([0 for i in range(num_envs)], dtype=float)
@@ -241,6 +246,9 @@ if __name__ == '__main__':
                 torch.nn.utils.clip_grad_norm_(critic.parameters(), grad_clip) 
 
                 value_opt.step()
+
+        value_scheduler.step()
+        policy_scheduler.step()
 
         if episode % 100 == 0:
             print("Saved")
