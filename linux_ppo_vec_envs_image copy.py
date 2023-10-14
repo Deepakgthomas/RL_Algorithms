@@ -134,7 +134,6 @@ if __name__ == '__main__':
             tot_rewards += reward
             for reward_val, done_val in zip(tot_rewards, done):
                 if done_val:
-                    print("reward_val = ", reward_val)
                     last_n_rewards.append(reward_val)
                     final_scores.append(reward_val)
             tot_rewards[done] = 0
